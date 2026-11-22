@@ -1,0 +1,4 @@
+PyQt6>=6.6.0
+Pillow>=11.0.0      # isteğe bağlı: Qt'nin açamadığı görsel biçimleri için
+imageio-ffmpeg>=0.5.0  # ekran videosu için ffmpeg (yoksa PATH'teki ffmpeg aranır)
+pypdfium2>=4.30.0     # araştırma modu: PDF okuyucu

@@ -1,0 +1,228 @@
+"""Vektörel (SVG) ikon seti — kamug ile aynı Material yolları + yazıt'ın çizim araçları.
+Renk ve boyuta göre önbelleğe alınır."""
+from PyQt6.QtCore import QByteArray, QRectF, Qt
+from PyQt6.QtGui import QIcon, QPainter, QPixmap, QGuiApplication
+from PyQt6.QtSvg import QSvgRenderer
+
+
+def _s(d, w="1.9"):
+    """Çizgi tabanlı ikon ({c} renk yer tutucusu)."""
+    return (f'<g fill="none" stroke="{{c}}" stroke-width="{w}" stroke-linecap="round" '
+            f'stroke-linejoin="round">{d}</g>')
+
+
+P = {
+    # --- kamug'dan (Material Design, Apache 2.0) ---
+    "close": "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+    "win_min": "M5 11.25h14v1.5H5z",
+    "win_max": "M6.5 5h11A1.5 1.5 0 0 1 19 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5v-11A1.5 1.5 0 0 1 6.5 5zm0 1.5v11h11v-11z",
+    "win_restore": "M8.5 4h9A2.5 2.5 0 0 1 20 6.5v9h-1.5v-9a1 1 0 0 0-1-1h-9zM5.5 8h9A1.5 1.5 0 0 1 16 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 18.5v-9A1.5 1.5 0 0 1 5.5 8zm0 1.5v9h9v-9z",
+    "pin": "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z",
+    "pin_outline": "M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3V4h1c.55 0 1-.45 1-1s-.45-1-1-1z",
+    "folder": "M9.17 6l2 2H20v10H4V6h5.17M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
+    "create_new_folder": "M20 6h-8l-2-2H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm0 12H4V6h5.17l2 2H20v10zm-8-4h2v2h2v-2h2v-2h-2v-2h-2v2h-2z",
+    "folder_open": "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z",
+    "image": "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+    "save": "M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
+    "undo": "M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z",
+    "redo": "M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z",
+    "check": "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    "info": "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+    "moon": "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z",
+    "sun": "M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z",
+    "colorize": "M20.71 5.63l-2.34-2.34a.996.996 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z",
+    "more_horiz": "M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
+    "fit": "M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z",
+    "add": "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    "delete": "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    "resize": "M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z",
+    "copy": "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+    "keyboard": "M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z",
+    "palette": "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
+    "open_in": "M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
+    "queue": "M19 9H2v2h17V9zm0-4H2v2h17V5zM2 15h13v-2H2v2zm15-2v6l5-3-5-3z",
+    "download": "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+    "edit": "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+    "settings": "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+    "text": "M5 4v3h5.5v12h3V7H19V4z",
+    "videocam": "M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z",
+    "volume": "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z",
+    "timer": "M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z",
+    "monitor": "M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z",
+    "hd": "M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 12H9.5v-2h-2v2H6V9h1.5v2.5h2V9H11v6zm2-6h4c.55 0 1 .45 1 1v4c0 .55-.45 1-1 1h-4V9zm1.5 4.5h2v-3h-2v3z",
+    "stop": "M7 6h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z",
+    "mic": "M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z",
+    # --- yazıt çizim araçları (çizgi tabanlı) ---
+    "select": '<path fill="{c}" d="M6 3.4l12.6 9.3-5.7.9 3.3 6.2-2.4 1.2-3.2-6.3-4.2 3.9z"/>',
+    "pen": _s('<path d="M4 20l1.1-4.3L15.5 5.3a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.3 18.9z"/>'
+              '<path d="M13.6 7.2l3.2 3.2"/>'),
+    "highlighter": _s('<path d="M9.4 15.6l-3-3 8.7-8.7a1.5 1.5 0 0 1 2.1 0l.9.9a1.5 1.5 0 0 1 0 2.1z"/>'
+                      '<path d="M6.4 12.6L4.8 16.2l3 3 1.6-3.6"/><path d="M11 20.5h9"/>'),
+    "laser": '<circle cx="12" cy="12" r="3.3" fill="{c}"/>' + _s(
+        '<path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8'
+        'M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/>'),
+    "eraser": _s('<path d="M8.6 19.5L4.3 15.2a1.6 1.6 0 0 1 0-2.3l8.6-8.6a1.6 1.6 0 0 1 2.3 0l4.5 4.5a1.6 1.6 0 0 1 0 2.3'
+                 'L11.1 19.5z"/><path d="M8.7 9l6.3 6.3"/><path d="M8.6 19.5H20"/>'),
+    "line": _s('<path d="M5 19L19 5"/>', "2.1"),
+    "arrow": _s('<path d="M5 19L18.3 5.7"/><path d="M10 5h9v9"/>', "2.1"),
+    "rect": _s('<rect x="3.5" y="5.5" width="17" height="13" rx="2"/>'),
+    "ellipse": _s('<ellipse cx="12" cy="12" rx="8.7" ry="6.9"/>'),
+    "shapes": _s('<rect x="3.5" y="10.5" width="9.5" height="9.5" rx="1.6"/><circle cx="15.8" cy="8.2" r="4.6"/>'),
+    "capture": _s('<path d="M4 8.5v-3A1.5 1.5 0 0 1 5.5 4h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 '
+                  '1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3"/><circle cx="12" cy="12" r="3.2"/>'),
+    "screen_draw": _s('<rect x="2.8" y="4" width="18.4" height="12.6" rx="1.8"/><path d="M9 20.6h6M12 16.6v4"/>'
+                      '<path d="M6.8 12.6c1.5-3 3-3.2 4.2-1.4s2.4 1.6 3.4-.4 2-2.2 2.8-1.1"/>'),
+    "note_add": _s('<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/>'
+                   '<path d="M14 3v5h5M12 11.2v6M9 14.2h6"/>'),
+    "research": _s('<rect x="3.5" y="4" width="4" height="15.5" rx=".8"/><rect x="8.8" y="6.5" width="4" '
+                   'height="13" rx=".8"/><path d="M14.4 7.9l3.7-1 3.3 12.3-3.7 1z"/><path d="M2.5 20.5h19"/>'),
+    "whiteboard": _s('<rect x="3" y="4" width="18" height="12.5" rx="1.6"/><path d="M8.5 20.5l2-4M15.5 20.5l-2-4"/>'),
+    "passthrough": _s('<path d="M7.3 4.6l10.2 7.5-4.6.8 2.6 5-1.9 1-2.6-5.1-3.6 3.3z"/><path d="M3.5 3.5l17 17"/>'),
+    "grid": ('<g fill="{c}"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/>'
+             '<circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>'
+             '<circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></g>'),
+    # --- hizala / diz / grupla / katman
+    "align_left": _s('<path d="M4 3v18"/><rect x="7" y="6" width="12" height="4" rx="1"/>'
+                     '<rect x="7" y="14" width="7.5" height="4" rx="1"/>'),
+    "align_hcenter": _s('<path d="M12 3v18"/><rect x="5.5" y="6" width="13" height="4" rx="1"/>'
+                        '<rect x="8" y="14" width="8" height="4" rx="1"/>'),
+    "align_right": _s('<path d="M20 3v18"/><rect x="5" y="6" width="12" height="4" rx="1"/>'
+                      '<rect x="9.5" y="14" width="7.5" height="4" rx="1"/>'),
+    "align_top": _s('<path d="M3 4h18"/><rect x="6" y="7" width="4" height="12" rx="1"/>'
+                    '<rect x="14" y="7" width="4" height="7.5" rx="1"/>'),
+    "align_vcenter": _s('<path d="M3 12h18"/><rect x="6" y="5.5" width="4" height="13" rx="1"/>'
+                        '<rect x="14" y="8" width="4" height="8" rx="1"/>'),
+    "align_bottom": _s('<path d="M3 20h18"/><rect x="6" y="5" width="4" height="12" rx="1"/>'
+                       '<rect x="14" y="9.5" width="4" height="7.5" rx="1"/>'),
+    "dist_h": _s('<path d="M3.5 4v16M20.5 4v16"/><rect x="9.5" y="7" width="5" height="10" rx="1"/>'),
+    "dist_v": _s('<path d="M4 3.5h16M4 20.5h16"/><rect x="7" y="9.5" width="10" height="5" rx="1"/>'),
+    "lay_row": _s('<rect x="2.5" y="8" width="5" height="8" rx="1"/><rect x="9.5" y="8" width="5" height="8" rx="1"/>'
+                  '<rect x="16.5" y="8" width="5" height="8" rx="1"/>'),
+    "lay_column": _s('<rect x="8" y="2.5" width="8" height="5" rx="1"/><rect x="8" y="9.5" width="8" height="5" rx="1"/>'
+                     '<rect x="8" y="16.5" width="8" height="5" rx="1"/>'),
+    "lay_grid": _s('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/>'
+                   '<rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/>'),
+    "lay_circle": _s('<circle cx="12" cy="4.6" r="2.2"/><circle cx="19.1" cy="9.8" r="2.2"/>'
+                     '<circle cx="16.4" cy="18.2" r="2.2"/><circle cx="7.6" cy="18.2" r="2.2"/>'
+                     '<circle cx="4.9" cy="9.8" r="2.2"/>'),
+    "same_size": _s('<rect x="3" y="6.5" width="7.5" height="11" rx="1"/><rect x="13.5" y="6.5" width="7.5" height="11" rx="1"/>'),
+    "group": _s('<path d="M3 7V4.5A1.5 1.5 0 0 1 4.5 3H7M17 3h2.5A1.5 1.5 0 0 1 21 4.5V7M21 17v2.5a1.5 1.5 0 0 1-1.5 '
+                '1.5H17M7 21H4.5A1.5 1.5 0 0 1 3 19.5V17"/><rect x="6.5" y="6.5" width="6.5" height="6.5" rx="1"/>'
+                '<rect x="11" y="11" width="6.5" height="6.5" rx="1"/>'),
+    "ungroup": _s('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/>'
+                  '<path d="M14 4h6v6M4 14v6h6" stroke-dasharray="2 2.4"/>'),
+    "layers": _s('<path d="M12 3.5l8.5 4.5-8.5 4.5-8.5-4.5z"/><path d="M3.5 12l8.5 4.5 8.5-4.5"/>'
+                 '<path d="M3.5 16l8.5 4.5 8.5-4.5"/>'),
+    "z_front": _s('<path d="M5 4h14M12 20V8.5M7.5 13L12 8.5l4.5 4.5"/>'),
+    "z_forward": _s('<path d="M12 19.5V5.5M7 10.5l5-5 5 5"/>'),
+    "z_backward": _s('<path d="M12 4.5v14M7 13.5l5 5 5-5"/>'),
+    "z_back": _s('<path d="M5 20h14M12 4v11.5M7.5 11l4.5 4.5 4.5-4.5"/>'),
+    "lock": _s('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'),
+    "lock_open": _s('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 7.7-1.5"/>'),
+    "eye": _s('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+    "eye_off": _s('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'
+                  '<path d="M4 4l16 16"/>'),
+    # --- 1.3 paket 3: döndür / kırp / saydamlık / dolgu / yazı biçimi ---
+    "crop": _s('<path d="M6.5 2.5v14.5a.5.5 0 0 0 .5.5h14.5"/><path d="M2.5 6.5h14.5a.5.5 0 0 1 .5.5v14.5"/>'),
+    "rotate_right": _s('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 3.5v5h-5"/>'),
+    "rotate_left": _s('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.5v5h5"/>'),
+    "flip_h": _s('<path d="M12 3v18" stroke-dasharray="2 2.2"/><path d="M9 6L3.5 17.5H9z"/><path d="M15 6l5.5 11.5H15z"/>'),
+    "flip_v": _s('<path d="M3 12h18" stroke-dasharray="2 2.2"/><path d="M6 9L17.5 3.5V9z"/><path d="M6 15l11.5 5.5V15z"/>'),
+    "rot_reset": _s('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.5v5h5"/><path d="M12 8.5V12l2.5 1.5"/>'),
+    "opacity": _s('<path d="M12 3.2s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11z"/><path d="M12 20.2v-12" />'
+                  '<path d="M12 12.5l4.6-2.4M12 16.6l5.6-2.7"/>'),
+    "fill": _s('<path d="M10 3.5l8 8-6.5 6.5a1.4 1.4 0 0 1-2 0L3.5 12a1.4 1.4 0 0 1 0-2z"/><path d="M3.8 11h14"/>'
+               '<path d="M20 15.5s1.6 2 1.6 3a1.6 1.6 0 0 1-3.2 0c0-1 1.6-3 1.6-3z"/>'),
+    "fill_none": _s('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M5 19L19 5"/>'),
+    "bucket": _s('<path d="M4.5 11.5 11 5l7 7-6.5 6.5a1.5 1.5 0 0 1-2.1 0L4.5 13.6a1.5 1.5 0 0 1 0-2.1z"/>'
+                  '<path d="M4.6 12.3h13.2M8.2 3.2 11 5"/><path d="M20 15s1.6 2 1.6 3.1a1.6 1.6 0 0 1-3.2 0C18.4 17 20 15 20 15z"/>'),
+    "wand": _s('<path d="M4 20 14.5 9.5"/><path d="M13 8l3 3"/><path d="M17 3v3M15.5 4.5h3M20.5 8.5v2M19.5 9.5h2'
+               'M10.5 3.5v2M9.5 4.5h2"/>'),
+    "lasso": _s('<ellipse cx="12.5" cy="9.5" rx="8" ry="5.5"/><path d="M7 13.5c-1.8 1.5-1.2 4 .8 4.2 1.8.2 2.2 1.6.7 3.3"/>'),
+    "restore": _s('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9"/><path d="M4.5 4.5V9H9"/><path d="M12 8.5v4l2.5 1.5"/>'),
+    "bg_remove": _s('<rect x="3.5" y="3.5" width="17" height="17" rx="2.5" stroke-dasharray="2.6 2.4"/>'
+                    '<circle cx="12" cy="10" r="3"/><path d="M6.8 18.5c1-2.8 3-4 5.2-4s4.2 1.2 5.2 4"/>'),
+    "sel_invert": _s('<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M4.8 19.2 19.2 4.8M8 20l12-12M12 20l8-8"/>'),
+    "sel_none": _s('<rect x="4" y="4" width="16" height="16" rx="2.5" stroke-dasharray="3 2.6"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>'),
+    "br_calli": _s('<path d="M4 20l4.5-4.5"/><path d="M8.5 15.5 15 4l5 5-11.5 6.5z"/><path d="M13 9.5l1.5 1.5"/>'),
+    "br_marker": _s('<path d="M7 17l-1.5 3.5L9 19l10-10-3-3z"/><path d="M14 8l3 3"/><path d="M13 21h7"/>'),
+    "br_pencil": _s('<path d="M4.5 19.5 6 14.5 15.5 5a2 2 0 0 1 3 3L9 17.5z"/><path d="M13.5 7l3 3"/>'
+                    '<path d="M4.5 19.5l2.2-.6" stroke-width="2.6"/>'),
+    "br_crayon": _s('<path d="M6 18 15.5 8.5l2.5 2.5L8.5 20.5H6z"/><path d="M15.5 8.5 17 4l3 3-2 4"/>'
+                    '<path d="M9 15.5l2 2M11.5 13l2 2"/>'),
+    "br_spray": _s('<rect x="5.5" y="10" width="8" height="11" rx="1.6"/><path d="M7.5 10V7h4v3M11.5 7H13"/>'
+                   '<path d="M16.5 5h.01M19 3.5h.01M18.5 7h.01M21 6h.01M20 9.5h.01" stroke-width="2.4"/>'),
+    "br_water": _s('<path d="M12 3.5s6 6.4 6 10.3a6 6 0 0 1-12 0C6 9.9 12 3.5 12 3.5z"/><path d="M9.3 14.5a2.8 2.8 0 0 0 2.4 2.6"/>'),
+    "er_part": _s('<path d="M5 15.5 14.5 6l4.5 4.5-8 8H8z"/><path d="M9.5 11l4.5 4.5"/><path d="M13 20.5h7" stroke-dasharray="2 2"/>'),
+    "er_object": _s('<path d="M5 15.5 14.5 6l4.5 4.5-8 8H8z"/><path d="M9.5 11l4.5 4.5"/><path d="M13 18.5h7M13 21h7"/>'),
+    "chev_down": _s('<path d="M7 10l5 5 5-5"/>', "2.2"),
+    "chev_right": _s('<path d="M10 7l5 5-5 5"/>', "2.2"),
+    "dash_solid": _s('<path d="M4 12h16"/>', "2.4"),
+    "dash_dash": _s('<path d="M3.5 12h4M10 12h4M16.5 12h4"/>', "2.4"),
+    "dash_dot": _s('<path d="M4 12h.01M9.3 12h.01M14.7 12h.01M20 12h.01"/>', "3"),
+    "dash_dashdot": _s('<path d="M3 12h5M12 12h.01M16 12h5"/>', "2.4"),
+    "font": _s('<path d="M4 19.5 9.5 5h1L16 19.5M6.2 14h7.6M16.5 19.5l2.7-7 2.7 7M17.4 17.3h3.6"/>', "1.9"),
+    "format_bold": _s('<path d="M7 4.5h6a3.6 3.6 0 0 1 0 7.2H7zM7 11.7h7a3.9 3.9 0 0 1 0 7.8H7z"/>', "2.4"),
+    "format_italic": _s('<path d="M10 4.5h8M6 19.5h8M15 4.5l-6 15"/>', "2.1"),
+    "format_underlined": _s('<path d="M7 4v6.5a5 5 0 0 0 10 0V4M5.5 20.5h13"/>', "2.1"),
+    "text_bigger": _s('<path d="M3 19L8.5 5 14 19M5 14.5h7M18.5 6v7M15 9.5h7"/>'),
+    "text_smaller": _s('<path d="M3 19L8.5 5 14 19M5 14.5h7M15 9.5h7"/>'),
+    "talign_left": _s('<path d="M4 5.5h16M4 10h10M4 14.5h16M4 19h10"/>'),
+    "talign_center": _s('<path d="M4 5.5h16M7 10h10M4 14.5h16M7 19h10"/>'),
+    "talign_right": _s('<path d="M4 5.5h16M10 10h10M4 14.5h16M10 19h10"/>'),
+    # --- tablo ---
+    "table": _s('<rect x="3.5" y="4.5" width="17" height="15" rx="0.6"/><path d="M3.5 9.5h17M3.5 14.5h17M9.2 4.5v15M14.8 4.5v15"/>'),
+    "table_round": _s('<rect x="3.5" y="4.5" width="17" height="15" rx="4"/><path d="M3.5 9.5h17M3.5 14.5h17M9.2 4.5v15M14.8 4.5v15"/>'),
+    "row_above": _s('<rect x="3.5" y="11" width="17" height="9" rx="1"/><path d="M3.5 15.5h17M12 2.5v6M9 5.5h6"/>'),
+    "row_below": _s('<rect x="3.5" y="4" width="17" height="9" rx="1"/><path d="M3.5 8.5h17M12 15.5v6M9 18.5h6"/>'),
+    "col_left": _s('<rect x="11" y="3.5" width="9" height="17" rx="1"/><path d="M15.5 3.5v17M5.5 9v6M2.5 12h6"/>'),
+    "col_right": _s('<rect x="4" y="3.5" width="9" height="17" rx="1"/><path d="M8.5 3.5v17M18.5 9v6M15.5 12h6"/>'),
+    "row_del": _s('<rect x="3.5" y="4" width="17" height="9" rx="1"/><path d="M3.5 8.5h17M9.5 16.5l5 5M14.5 16.5l-5 5"/>'),
+    "col_del": _s('<rect x="4" y="3.5" width="9" height="17" rx="1"/><path d="M8.5 3.5v17M16 9.5l5 5M21 9.5l-5 5"/>'),
+    "border_on": _s('<rect x="3.5" y="3.5" width="17" height="17" rx="0.6"/><path d="M12 3.5v17M3.5 12h17"/>'),
+    "border_off": _s('<path d="M12 3.5v17M3.5 12h17"/><rect x="3.5" y="3.5" width="17" height="17" rx="0.6" '
+                     'stroke-dasharray="1.4 2.6" stroke-width="1.3"/>'),
+    "blank": _s(''),
+    "formula": _s('<path d="M17.5 5H7l5.5 7L7 19h10.5"/>'),
+    "header_row": _s('<rect x="3.5" y="4.5" width="17" height="15" rx="1"/><path d="M3.5 9.5h17"/>'
+                     '<path d="M4.5 5.5h15v3h-15z" fill="{c}" stroke="none"/>'),
+}
+
+_cache = {}
+
+
+def _svg(name: str, color: str) -> bytes:
+    path = P.get(name, P["info"])
+    vb = "0 0 24 24"
+    if path.startswith("<"):
+        return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">'
+                + path.replace("{c}", color) + '</svg>').encode()
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">'
+            f'<path fill="{color}" d="{path}"/></svg>').encode()
+
+
+def pixmap(name: str, color: str = "#ffffff", size: int = 24) -> QPixmap:
+    app = QGuiApplication.instance()
+    dpr = app.devicePixelRatio() if app else 1.0
+    key = (name, color, size, dpr)
+    pm = _cache.get(key)
+    if pm is not None:
+        return pm
+    px = max(1, int(round(size * dpr)))
+    pm = QPixmap(px, px)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if name.startswith("eng_"):          # mühendislik şekilleri: ikon şeklin kendisinden çizilir
+        from . import engshapes
+        engshapes.paint_icon(p, name[4:], color, px)
+    else:
+        QSvgRenderer(QByteArray(_svg(name, color))).render(p, QRectF(0, 0, px, px))
+    p.end()
+    pm.setDevicePixelRatio(dpr)
+    _cache[key] = pm
+    return pm
+
+
+def icon(name: str, color: str = "#ffffff", size: int = 24) -> QIcon:
+    return QIcon(pixmap(name, color, size))

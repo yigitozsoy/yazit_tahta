@@ -1,0 +1,501 @@
+"""Uygulama girişi: tek örnek, tema, sistem tepsisi, her yerde çalışan kısayollar.
+
+python main.py           pencereyle açılır
+python main.py --tray    sessizce tepside başlar (Windows ile başlat bunu kullanır)
+python main.py --snip    ekran alıntısını başlatır (masaüstündeki "yazıt alıntı" simgesi; yazıt kapalıysa tepside açılır)
+python main.py --quit    çalışan yazıt'ı notları kaydedip kapatır (kurulum / kaldırma kullanır)
+python main.py NOT.yazit  notu açar (eski .delta dosyaları da)
+"""
+import ctypes
+import os
+import sys
+
+from PyQt6.QtCore import Qt, QObject, QTimer, QRect
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+
+from .config import prefs, asset
+
+SERVER_NAME = "yazit-single-instance-v1"
+
+
+def _send_to_running(cmd: str) -> bool:
+    sock = QLocalSocket()
+    sock.connectToServer(SERVER_NAME)
+    if not sock.waitForConnected(300):
+        return False
+    try:
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+    except Exception:
+        pass
+    sock.write(cmd.encode("utf-8"))
+    sock.flush()
+    sock.waitForBytesWritten(1000)
+    sock.disconnectFromServer()
+    return True
+
+
+class YazitApp(QObject):
+    def __init__(self, app, start_hidden=False):
+        super().__init__()
+        self.app = app
+        from .theme import theme
+        theme.apply()
+        from .pages import NoteStore
+        from .window import MainWindow
+        from .hotkeys import HotkeyManager
+        from .capture import CaptureController
+        from .annotate import AnnotateOverlay
+        from .recorder import Recorder
+        from .pin import PinManager
+        self.store = NoteStore()
+        self.win = MainWindow(self.store)
+        self.hotkeys = HotkeyManager()
+        self.capture = CaptureController()
+        self.annotate = AnnotateOverlay()
+        self.recorder = Recorder()
+        self.pins = PinManager()
+        self._restore_after_capture = False
+        self.rec_panel = None          # kayıt paneli (açıkken)
+        self.countdown = None          # kayıt öncesi geri sayım
+        self._rec_cfg = None           # bu kaydın ayarları (panelden)
+        self._restore_after_record = False
+        self._rec_area_ok = False
+
+        self.win.request_capture.connect(self.start_capture_from_window)
+        self.win.request_annotate.connect(self.start_annotate_from_window)
+        self.annotate.closed.connect(self._annotate_done)
+        self._restore_after_annotate = False
+        self.win.request_record.connect(self.start_record_from_window)
+        self.win.request_prefs.connect(self.show_prefs)
+        self.win.request_quit.connect(self.quit)
+        self.capture.to_yazit.connect(self.win.receive_image)
+        self.capture.saved.connect(lambda p: self.notify(self._t("saved_to", p=os.path.basename(p))))
+        self.capture.finished.connect(self._capture_done)
+        self.capture.record.connect(self._begin_record)
+        self.capture.pinned.connect(lambda d: self.pins.add(*d))
+        self.capture.ocr_req.connect(self.ocr_snip)
+        self.pins.to_yazit.connect(self.win.receive_image)
+        self.pins.saved.connect(lambda p: self.notify(self._t("saved_to", p=os.path.basename(p))))
+        self.recorder.saved.connect(self._record_saved)
+        self.recorder.failed.connect(lambda m: self.notify(self._t("rec_failed"), m))
+        self.recorder.stopped.connect(self._record_stopped)
+        self._last_video = None
+        self.annotate.export.connect(self.win.receive_image)
+        self.hotkeys.triggered.connect(self.on_hotkey)
+
+        self._make_tray()
+        self.apply_hotkeys()
+        if not start_hidden:
+            self.win.show()
+        # güncelleme denetimi: açılıştan biraz sonra, günde en fazla bir kez
+        from .updater import UpdateChecker
+        self.updater = UpdateChecker(self)
+        self.updater.found.connect(self._update_found)
+        self._update_page = None
+        QTimer.singleShot(6000, self.updater.check_auto)
+
+    def _t(self, k, **kw):
+        from .i18n import t
+        return t(k, **kw)
+
+    # --- tepsi
+    def _make_tray(self):
+        self.tray = None
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.win.tray_ok = False
+            return
+        self.tray = QSystemTrayIcon(self.app.windowIcon(), self)
+        self.tray.setToolTip(self._t("app_name"))
+        m = QMenu()
+        self.tray_menu = m
+        self.act_cap = QAction(self._t("tray_capture"), m)
+        self.act_cap.triggered.connect(lambda: self.capture.start(150))
+        self.act_ann = QAction(self._t("tray_annotate"), m)
+        self.act_ann.triggered.connect(self.annotate.toggle)
+        self.act_rec = QAction(self._t("tray_record"), m)
+        self.act_rec.triggered.connect(lambda: self.on_hotkey("record"))
+        self.act_note = QAction(self._t("tray_note"), m)
+        self.act_note.triggered.connect(self.win.quick_note)
+        self.act_unpin = QAction(self._t("pin_close_all"), m)
+        self.act_unpin.triggered.connect(self.pins.close_all)
+        self.act_unpin.setVisible(False)
+        self.pins.changed.connect(lambda: self.act_unpin.setVisible(bool(self.pins.pins)))
+        a_show = QAction(self._t("tray_show"), m)
+        a_show.triggered.connect(self.win.bring_front)
+        a_prefs = QAction(self._t("preferences"), m)
+        a_prefs.triggered.connect(self.show_prefs)
+        a_quit = QAction(self._t("tray_quit"), m)
+        a_quit.triggered.connect(self.win.quit_app)
+        for a in (self.act_cap, self.act_rec, self.act_ann, self.act_note, self.act_unpin):
+            m.addAction(a)
+        m.addSeparator()
+        m.addAction(a_show)
+        m.addAction(a_prefs)
+        m.addSeparator()
+        m.addAction(a_quit)
+        self.tray.setContextMenu(m)
+        self.tray.activated.connect(self._tray_activated)
+        self.tray.messageClicked.connect(self._message_clicked)
+        self.tray.show()
+        self.win.tray_ok = True
+        self.win.tray_message = self.notify
+
+    def _tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            if self.win.isVisible() and not self.win.isMinimized() and self.win.isActiveWindow():
+                self.win.hide()
+            else:
+                self.win.bring_front()
+
+    def notify(self, title, text=""):
+        if self.tray is not None:
+            if not text:
+                title, text = self._t("app_name"), title
+            self.tray.showMessage(title, text, self.app.windowIcon(), 3500)
+
+    # --- kısayollar
+    def apply_hotkeys(self):
+        for name in ("capture", "annotate", "note", "record"):
+            self.hotkeys.set(name, prefs.get("hotkey_" + name, ""))
+        cap, ann, note, rec = (prefs.get("hotkey_" + n, "") for n in ("capture", "annotate", "note", "record"))
+        self.win.titlebar.set_hotkey_tips(cap, ann, rec)
+        if self.tray is not None:
+            self.act_cap.setText(self._t("tray_capture") + (f"\t{cap}" if cap else ""))
+            self.act_ann.setText(self._t("tray_annotate") + (f"\t{ann}" if ann else ""))
+            self.act_note.setText(self._t("tray_note") + (f"\t{note}" if note else ""))
+            self._rec_text = self._t("tray_record") + (f"\t{rec}" if rec else "")
+            self.act_rec.setText(self._t("rec_stop") if self.recorder.active() else self._rec_text)
+
+    def on_hotkey(self, name):
+        if name == "record":
+            self.toggle_record(from_window=False)
+            return
+        if name == "capture":
+            self._close_annotate_for_capture()
+            self.capture.start()
+        elif name == "annotate":
+            if not self.capture.active():
+                self.annotate.toggle()
+        elif name == "note":
+            self.win.quick_note()
+
+    def start_capture_from_window(self):
+        """Pencereden basılınca yazıt önce çekilir, arkadaki ekran alınır."""
+        self._restore_after_capture = self.win.isVisible() and not self.win.isMinimized()
+        self.win.hide()
+        self.capture.start(220)
+
+    def start_annotate_from_window(self):
+        """Pencereden basılınca yazıt görev çubuğuna iner, ekrana çiz kapanınca geri gelir."""
+        if self.annotate.isVisible():
+            self.annotate.toggle()
+            return
+        self._restore_after_annotate = self.win.isVisible() and not self.win.isMinimized()
+        if self._restore_after_annotate:
+            self.win.showMinimized()
+            QTimer.singleShot(180, self.annotate.open)   # küçülme bitsin, katman altta yazıt'ı göstermesin
+        else:
+            self.annotate.open()
+
+    def _close_annotate_for_capture(self):
+        """Ekrana çiz açıkken alıntı: çizim kapanır ama indirilmiş yazıt hemen geri gelmez (yoksa alıntıya girerdi);
+        geri gelme işi alıntı bitene devredilir."""
+        if not self.annotate.isVisible():
+            return
+        restore = self._restore_after_annotate
+        self._restore_after_annotate = False
+        self.annotate.close_overlay()
+        self._restore_after_capture = self._restore_after_capture or restore
+
+    def _annotate_done(self):
+        if self._restore_after_annotate and self.win.isMinimized():
+            self.win.bring_front()
+        self._restore_after_annotate = False
+
+    def start_record_from_window(self):
+        self.toggle_record(from_window=True)
+
+    # --- ekran videosu: panel → (alan seçimi) → geri sayım → kayıt
+    def toggle_record(self, from_window=False):
+        """Kayıt sürüyorsa durdurur; geri sayımdaysa vazgeçer; panel açıksa başlatır; yoksa paneli açar."""
+        if self.recorder.active():
+            self.recorder.stop()
+            return
+        if self.countdown is not None:
+            self.countdown._finish(False)
+            return
+        if self.rec_panel is not None:
+            self.rec_panel._go()
+            return
+        if self.capture.active():
+            return
+        from .recpanel import RecordPanel
+        if from_window:
+            self._restore_after_record = self.win.isVisible() and not self.win.isMinimized()
+            self.win.hide()
+        p = RecordPanel()
+        self.rec_panel = p
+        p.start_req.connect(self._panel_start)
+        p.finished.connect(lambda _r: self._panel_closed(p))
+        p.show()
+
+    def _panel_closed(self, p):
+        if self.rec_panel is p:
+            self.rec_panel = None
+            p.deleteLater()
+        if self._rec_cfg is None and self.countdown is None and not self.capture.active() \
+                and not self.recorder.active():
+            self._restore_window_after_record()
+
+    def _restore_window_after_record(self):
+        if self._restore_after_record:
+            self._restore_after_record = False
+            self.win.bring_front()
+
+    def _panel_start(self, cfg):
+        self._rec_cfg = cfg
+        if cfg["scene"] == "screen":
+            from .recpanel import screen_for
+            scr = screen_for(cfg)
+            g = scr.geometry()
+            QTimer.singleShot(150, lambda: self._countdown(scr, QRect(0, 0, g.width(), g.height()),
+                                                           scr.devicePixelRatio()))
+        else:
+            self._restore_after_capture = False
+            QTimer.singleShot(150, lambda: self.capture.start(0, mode="record"))
+
+    def _begin_record(self, data):
+        """Alan seçildi (kayıt modunda ya da alıntı çubuğundaki Video düğmesiyle)."""
+        scr, sel, dpr = data
+        self._rec_area_ok = True
+        self._restore_after_record = self._restore_after_record or self._restore_after_capture
+        self._restore_after_capture = False   # kayıt boyunca yazıt gizli kalsın
+        QTimer.singleShot(120, lambda: self._countdown(scr, sel, dpr))
+
+    def _countdown(self, scr, sel, dpr):
+        from .recorder import Countdown, rec_config
+        cfg = self._rec_cfg or rec_config()
+        n = int(cfg.get("countdown", 0))
+        if n <= 0:
+            self._start_recording(scr, sel, dpr, cfg)
+            return
+        g = scr.geometry()
+        cd = Countdown(QRect(g.x() + sel.x(), g.y() + sel.y(), sel.width(), sel.height()), n)
+        self.countdown = cd
+        cd.done.connect(lambda: self._start_recording(scr, sel, dpr, cfg))
+        cd.cancelled.connect(self._countdown_cancelled)
+        cd.start()
+
+    def _countdown_cancelled(self):
+        self.countdown = None
+        self._rec_cfg = None
+        self._restore_window_after_record()
+
+    def _start_recording(self, scr, sel, dpr, cfg):
+        self.countdown = None
+        self._rec_cfg = None
+        self.recorder.start(scr, sel, dpr, cfg)
+        if self.recorder.warning:
+            self.notify(self.recorder.warning)
+        if self.tray is not None and self.recorder.active():
+            self.act_rec.setText(self._t("rec_stop"))
+
+    def _update_found(self, ver, page):
+        self._update_page = page
+        self._last_video = None
+        self.notify(self._t("update_notify", v=ver), self._t("update_notify_sub"))
+
+    def _record_saved(self, path):
+        self._update_page = None
+        self._last_video = path
+        self.notify(self._t("rec_saved_title"), self._t("rec_saved", p=os.path.basename(path)))
+
+    def _record_stopped(self):
+        self._restore_window_after_record()
+        if self.tray is not None:
+            self.act_rec.setText(getattr(self, "_rec_text", self._t("tray_record")))
+
+    def _message_clicked(self):
+        """Bildirime tıklanınca: yeni sürüm sayfası açılır ya da son video Gezgin'de seçili gösterilir."""
+        if getattr(self, "_update_page", None):
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl(self._update_page))
+            self._update_page = None
+            return
+        if self._last_video and os.path.exists(self._last_video):
+            import subprocess
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(self._last_video)])
+            self._last_video = None
+
+    def _capture_done(self):
+        if self._rec_cfg is not None and not self._rec_area_ok:   # kayıt alanı seçilirken Esc
+            self._rec_cfg = None
+            self._restore_window_after_record()
+        self._rec_area_ok = False
+        if self._restore_after_capture and (not self.win.isVisible() or self.win.isMinimized()):
+            self.win.bring_front()
+        self._restore_after_capture = False
+
+    def show_prefs(self):
+        from .dialogs import PrefsDialog
+        parent = self.win if self.win.isVisible() else None
+        d = PrefsDialog(parent, self.hotkeys, self.apply_hotkeys, getattr(self, "updater", None))
+        d.exec()
+
+    def ocr_snip(self, pm):
+        """Alıntıdaki yazıyı oku, panoya kopyala, bildirimle göster."""
+        from .ocr import read_text
+
+        def done(text):
+            if text:
+                QApplication.clipboard().setText(text)
+                first = text.splitlines()[0][:60]
+                self.notify(self._t("ocr_done", n=text.count("\n") + 1), first)
+            else:
+                self.notify(self._t("ocr_empty"))
+        read_text(pm.toImage(), done, lambda m: self.notify(self._t("ocr_failed"), m))
+
+    def handle_message(self, cmd):
+        if cmd == "show":
+            self.win.bring_front()
+        elif cmd == "snip":   # "yazıt alıntı" simgesi: tıklanan kısayolun izi ekrandan kalksın diye kısa bekle
+            self._close_annotate_for_capture()
+            self.capture.start(250)
+        elif cmd == "quit":   # kurulum / kaldırma: notları kaydedip kapan
+            self.win.quit_app()
+        elif cmd.startswith("open:"):   # .yazit / .delta dosyasına çift tık (kamug da böyle açar)
+            from .config import remap_old_path
+            self.win.open_file(remap_old_path(cmd[5:]))
+
+    def quit(self):
+        if self.recorder.active():
+            self.recorder.stop()
+            if self.recorder.proc is not None:
+                self.recorder.proc.waitForFinished(8000)
+        self.win.save_state()
+        for bd in (self.win.board, getattr(self.annotate, "board", None)):
+            if bd is not None:
+                bd.detach()
+        self.hotkeys.unregister_all()
+        if self.tray is not None:
+            self.tray.hide()
+        self.app.quit()
+
+
+def _install_excepthook():
+    """PyQt varsayılan olarak yakalanmamış hatada uygulamayı kapatır; toplantı ortasında çökmesin,
+    hata %LOCALAPPDATA%\\yazit\\error.log dosyasına yazılsın."""
+    import traceback
+    from .config import DATA_DIR
+
+    def hook(etype, value, tb):
+        txt = "".join(traceback.format_exception(etype, value, tb))
+        try:
+            sys.__stderr__.write(txt)
+        except Exception:
+            pass
+        try:
+            with open(os.path.join(DATA_DIR, "error.log"), "a", encoding="utf-8") as f:
+                f.write(txt + "\n")
+        except OSError:
+            pass
+    sys.excepthook = hook
+
+
+def _selfcheck():
+    """yazit.exe --selfcheck: derlenmiş pakette tüm modüller, logo ve ffmpeg yerinde mi? (çıkış kodu 0 = tamam)"""
+    import importlib
+    from .config import asset
+    for m in ("window", "canvas", "items", "pages", "capture", "annotate", "recorder", "pin", "hotkeys",
+              "dialogs", "titlebar", "toolbar", "theme", "icons", "widgets", "winident", "ocr", "export", "updater",
+              "recpanel", "loopback", "fonts", "fontpick", "pixels", "retouch", "brushes", "research", "shelf",
+              "readers", "research_view", "research_export", "kamuglink"):
+        importlib.import_module("yazit." + m)
+    try:                                   # araştırma modu PDF okuyucusu (pdfium.dll pakette mi?)
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument.new()
+        doc.new_page(100, 100)
+        pdf_ok = len(doc) == 1
+        doc.close()
+    except Exception:
+        pdf_ok = False
+    if not pdf_ok:
+        return 4
+    from .recorder import find_ffmpeg
+    from PyQt6.QtGui import QGuiApplication, QImage
+    _ = QGuiApplication(sys.argv[:1])
+    ok = find_ffmpeg() is not None and not QImage(asset("logo.png")).isNull() and os.path.exists(asset("logo.ico")) \
+        and os.path.exists(asset("snip.ico"))
+    return 0 if ok else 3
+
+
+def main():
+    if "--selfcheck" in sys.argv:
+        return _selfcheck()
+    _install_excepthook()
+    from .winident import set_process_id
+    set_process_id()
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    app = QApplication(sys.argv)
+    app.setApplicationName("yazit")
+    app.setApplicationDisplayName("yazıt")
+    app.setOrganizationName("yazit")
+    app.setQuitOnLastWindowClosed(False)  # tepside yaşamaya devam
+    from . import fonts
+    fonts.load()    # yazıt ile gelen + kullanıcının eklediği yazı tipleri
+    f = fonts.font()   # tüm alfabeler için yedek zinciriyle (Göktürk, Çince, Hintçe …)
+    f.setPointSizeF(9.5)
+    app.setFont(f)
+    ico = asset("logo.ico") if os.path.exists(asset("logo.ico")) else asset("logo.png")
+    app.setWindowIcon(QIcon(ico))
+
+    try:
+        from PyQt6.QtCore import QTranslator, QLibraryInfo
+        if prefs.get("language", "tr") == "tr":
+            tr = QTranslator(app)
+            if tr.load("qtbase_tr", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+                app.installTranslator(tr)
+    except Exception:
+        pass
+
+    if "--quit" in sys.argv:   # çalışan yazıt'ı düzgünce kapat (kurulum betiği kullanır)
+        _send_to_running("quit")
+        return 0
+    snip = "--snip" in sys.argv
+    hidden = "--tray" in sys.argv or snip
+    from .config import migrate_user_dirs, remap_old_path, is_note_file
+    migrate_user_dirs()     # delta → yazıt: Resimler\delta vb. bir kez yeni ada taşınır
+    note_file = next((remap_old_path(a) for a in sys.argv[1:] if is_note_file(a)), None)
+    if note_file and not os.path.isfile(note_file):
+        note_file = None
+    if note_file:
+        note_file = os.path.abspath(note_file)
+        hidden = False
+    if _send_to_running("open:" + note_file if note_file else "snip" if snip else "tray" if hidden else "show"):
+        return 0
+    QLocalServer.removeServer(SERVER_NAME)
+    server = QLocalServer()
+    server.listen(SERVER_NAME)
+
+    d = YazitApp(app, start_hidden=hidden)
+
+    def on_conn():
+        s = server.nextPendingConnection()
+        if s is None:
+            return
+
+        def read():
+            cmd = bytes(s.readAll()).decode("utf-8", errors="ignore").strip()
+            QTimer.singleShot(0, lambda: d.handle_message(cmd))
+        s.readyRead.connect(read)
+        s.disconnected.connect(s.deleteLater)
+    server.newConnection.connect(on_conn)
+    app._yazit = d
+    if snip:
+        QTimer.singleShot(300, lambda: d.handle_message("snip"))
+    if note_file:
+        QTimer.singleShot(0, lambda: d.handle_message("open:" + note_file))
+    return app.exec()
