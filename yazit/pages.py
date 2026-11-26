@@ -3,7 +3,7 @@
 Her not tek bir .yazit dosyasıdır (Photoshop'taki .psd gibi): çizimler, yazılar, görseller, katmanlar içinde;
 çift tıklayınca yazıt'ta düzenlenebilir açılır. Yer: notes_root() — varsayılan Resimler\\yazit.
 Klasörler gerçek alt klasörlerdir (tek düzey): Resimler\\yazit\\İş\\Toplantı.yazit.
-Uygulamanın eski adı delta: eski .delta notları da listelenir / açılır, uzantıları korunur (içerik aynı JSON).
+Eski sürümün not uzantısı da (config.NOTE_EXTS) listelenir / açılır, uzantısı korunur (içerik aynı JSON).
 Dosya adı notun başlığından gelir; başlık değişince dosya da yeniden adlandırılır.
 Önbellekler %LOCALAPPDATA%\\yazit altında: küçük resimler (thumbs\\<id>.png), dosya özetleri (notes_cache.json).
 1.2 ve öncesinin notları (%LOCALAPPDATA%\\yazit\\notes\\*.json) ilk açılışta bir kez not dosyasına taşınır, eskiler yedek kalır."""
@@ -26,7 +26,7 @@ from .i18n import t, month_short
 from .theme import theme, qcolor, color as tcolor
 from .widgets import IconButton
 
-EXT = NOTE_EXT              # yeni notlar .yazit; eski .delta dosyaları da okunur, uzantıları korunur
+EXT = NOTE_EXT              # yeni notlar .yazit; eski uzantılı dosyalar da okunur, uzantıları korunur
 FORMAT = "delta-note"      # iç biçim adı: eski notlarla uyum için değişmez
 THUMBS_DIR = os.path.join(DATA_DIR, "thumbs")
 CACHE_FILE = os.path.join(DATA_DIR, "notes_cache.json")
@@ -74,7 +74,7 @@ def unique_path(folder, base, ext, keep=None):
 
 
 def file_ext(path):
-    """Notun dosya uzantısı: var olan dosyanınki korunur (eski .delta yeniden adlandırılınca .delta kalır),
+    """Notun dosya uzantısı: var olan dosyanınki korunur (eski uzantılı bir not yeniden adlandırılınca uzantısı kalır),
     yeni notlar .yazit."""
     ext = os.path.splitext(path)[1] if path else ""
     return ext if ext.lower() in NOTE_EXTS else EXT
@@ -112,7 +112,7 @@ class Page(QObject):
         self.modified = meta.get("modified", self.created)
         self.view = meta.get("view") or {}
         self.folder = folder            # notes_root altındaki klasör adı ("" = kökte)
-        self.file = file                # .yazit (ya da eski .delta) dosyasının yolu (henüz kaydedilmediyse None)
+        self.file = file                # not dosyasının yolu (henüz kaydedilmediyse None)
         self.external = False           # notes_root dışında bir not dosyası (çift tıkla açılmış)
         self.temp = temp
         self.scene = None
@@ -245,7 +245,7 @@ class NoteStore(QObject):
         return p
 
     def scan(self):
-        """notes_root içindeki .yazit / .delta dosyalarını ve tek düzey alt klasörleri okur."""
+        """notes_root içindeki not dosyalarını ve tek düzey alt klasörleri okur."""
         states = prefs.get("folder_open", {}) or {}
         folders = []
         try:
@@ -278,7 +278,7 @@ class NoteStore(QObject):
         return next((p for p in self.pages.values() if p.file and _norm(p.file) == n), None)
 
     def open_file(self, path):
-        """Çift tıklanan not dosyası (.yazit / .delta): notes_root içindeyse o not, dışındaysa yerinde açılır (kaydedince oraya yazar)."""
+        """Çift tıklanan not dosyası: notes_root içindeyse o not, dışındaysa yerinde açılır (kaydedince oraya yazar)."""
         if not path or not os.path.isfile(path):
             return None
         p = self.page_for_file(path)

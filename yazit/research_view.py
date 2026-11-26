@@ -61,6 +61,19 @@ QPushButton#RsBtnMain:hover {{ background: {qc(P['ink']).lighter(112).name()}; }
 QPushButton#RsIcon {{ background: transparent; border: none; border-radius: 6px; color: {P['muted']};
     font-family: {mono}; font-size: 15px; min-width: 26px; max-width: 26px; min-height: 26px; padding: 0; }}
 QPushButton#RsIcon:hover {{ background: {P['faint']}; color: {P['text']}; }}
+QLineEdit#RsFind {{ background: {P['bg']}; border: 1px solid {P['faint']}; border-radius: {rad}px; color: {P['text']};
+    padding: 6px 10px; font-family: {body}; font-size: 13px; }}
+QLineEdit#RsFind:focus {{ border-color: {P['ink']}; }}
+QFrame#RsHit {{ background: {P['bg']}; border: 1px solid {P['faint']}; border-radius: {rad}px; }}
+QFrame#RsHit:hover {{ border-color: {P['muted']}; }}
+QLabel#RsHitTitle {{ color: {P['text']}; font-family: {body}; font-size: 13px; font-weight: 600; background: transparent; }}
+QLabel#RsHitMeta {{ color: {P['muted']}; font-family: {body}; font-size: 11.5px; background: transparent; }}
+QLabel#RsBadge {{ color: {P['muted']}; font-family: {lab}; font-size: 10px; font-weight: 600;
+    letter-spacing: {P['label_sp']}px; background: transparent; }}
+QPushButton#RsHitBtn {{ background: {P['ink']}; color: {P['on_ink']}; border: none; border-radius: {max(4, rad - 2)}px;
+    padding: 4px 10px; font-family: {lab}; font-size: 11.5px; font-weight: 700; }}
+QPushButton#RsHitBtn:hover {{ background: {qc(P['ink']).lighter(112).name()}; }}
+QPushButton#RsHitBtn:disabled {{ background: transparent; color: {P['muted']}; border: 1px solid {P['faint']}; }}
 QTabBar#RsTabs {{ background: {P['panel']}; }}
 QTabBar#RsTabs::tab {{ background: transparent; color: {P['muted']}; padding: 9px 14px 8px 14px; border: none;
     border-bottom: 2px solid transparent; font-family: {lab}; font-size: {11.5 if up else 12.5}px; font-weight: 600; }}
@@ -1033,6 +1046,13 @@ class ResearchView(QWidget):
         self.split.addWidget(center)
         # sağ: notlar
         self.notes = NotesColumn()
+        # sağ sütunun üstü: internetten kaynak bul / bağlantı yapıştır (findpanel)
+        from .findpanel import FindPanel
+        self.finder = FindPanel()
+        self.finder.toast.connect(self.toast.emit)
+        self.notes.layout().insertWidget(0, self.finder, 0)
+        self.notes.layout().insertSpacing(1, 8)
+        self.shelf.links_dropped.connect(lambda links: [self.finder.fetch(u) for u in links])
         self.notes.added.connect(self._note_added)
         self.notes.removed.connect(self._note_removed)
         self.split.addWidget(self.notes)
@@ -1094,6 +1114,7 @@ class ResearchView(QWidget):
         self.home.restyle()
         self.shelf.relayout()
         self.notes.restyle()
+        self.finder.restyle()
         for i, (rel, w) in enumerate(self.tabs):
             if rel is None:
                 self.tabbar.setTabText(i, cap(t("rs_page_tab")))
@@ -1126,6 +1147,7 @@ class ResearchView(QWidget):
         self.shelf.set_research(r)
         self.page.set_research(r)
         self.notes.set_research(r)
+        self.finder.set_research(r)
         r.scan()
         self.stack.setCurrentIndex(1)
         sizes = prefs.get("research_split")
@@ -1149,6 +1171,7 @@ class ResearchView(QWidget):
         prefs.set("research_last", "")
         self.shelf.set_research(None)
         self.notes.set_research(None)
+        self.finder.set_research(None)
         if show_home:
             self.home.refresh()
             self.stack.setCurrentIndex(0)

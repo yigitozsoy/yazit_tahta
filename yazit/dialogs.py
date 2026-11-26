@@ -185,7 +185,7 @@ def autostart_command():
 
 
 RUN_VALUE = "yazit"          # HKCU Run değerinin adı (kurulumdaki "Windows ile başlat" ile aynı)
-OLD_RUN_VALUE = "delta"      # eski adın değeri: her değişiklikte kaldırılır (eski delta.exe'yi açmasın)
+OLD_RUN_VALUE = "delta"      # eski sürümün değeri: her değişiklikte kaldırılır
 
 
 def set_autostart(on):

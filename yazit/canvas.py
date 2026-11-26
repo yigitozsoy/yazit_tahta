@@ -2779,7 +2779,7 @@ class Board(QGraphicsView):
 
     @staticmethod
     def _note_paths(md):
-        """Sürüklenen not dosyaları (.yazit / eski .delta): tuvale bırakılınca not olarak açılır."""
+        """Sürüklenen not dosyaları (.yazit): tuvale bırakılınca not olarak açılır."""
         if not md.hasUrls():
             return []
         return [u.toLocalFile() for u in md.urls() if u.isLocalFile() and is_note_file(u.toLocalFile())

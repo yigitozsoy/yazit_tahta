@@ -117,6 +117,148 @@ def shot(widget, name):
         widget.grab().save(os.path.join(SHOTS, name + ".png"))
 
 
+def console_steps(d):
+    """Geliştirici konsolu: Shift+" modu açar, " açar / kapatır, yazı alanında yazılır, komutlar, geçmiş, tamamlama.
+    main() en sonda çağırır; kayıt / OCR adımları olmadan tek başına da çağrılabilir (offscreen sürücü betiği)."""
+    import time
+    from PyQt6.QtWidgets import QLineEdit
+    from PyQt6.QtNetwork import QLocalServer
+    import threading
+    from yazit import cli, app as yapp
+    from yazit.config import prefs
+    from yazit.tools import state
+    win = d.win
+    con, keys = win.console, win.console_keys
+    win.set_research_mode(False)
+    pump()
+
+    def ckey(shift=False, scan=41, k=Qt.Key.Key_QuoteDbl, text='"'):
+        mods = Qt.KeyboardModifier.ShiftModifier if shift else NOMOD
+        return QKeyEvent(QEvent.Type.KeyPress, k, mods, scan, 0, 0, text)
+
+    def settle():
+        for _ in range(40):
+            pump(1)
+            if con._anim is None or con._anim.state() != con._anim.State.Running:
+                break
+            time.sleep(0.01)
+        pump()
+
+    prefs.set("dev_mode", False)
+    ok = not keys.handle(ckey()) and not con.is_open() and not keys.handle(ckey(scan=40))
+    ok = ok and keys.handle(ckey(shift=True, k=Qt.Key.Key_Eacute, text="é"))
+    settle()
+    step("konsol: mod kapalıyken \" dokunmaz; Shift+\" modu açar ve konsol iner (başlık çubuğunun altında)",
+         ok and prefs.get("dev_mode") and con.is_open() and con.height() > 100
+         and con.geometry().top() >= win.titlebar.geometry().bottom())
+    con.edit.setText("open ")
+    con.edit.setFocus()
+    pump()
+    ok = True
+    if QApplication.focusWidget() is con.edit:
+        ok = not keys.handle(ckey())                 # komutun içinde " yazılır
+        con.edit.clear()
+        ok = ok and keys.handle(ckey())              # boş satırda " kapatır
+    else:
+        con.close_panel()
+    settle()
+    ok = ok and not con.is_open() and not con.isVisible()
+    ok = ok and keys.handle(ckey(scan=0))            # yapay olay: tuş koduna bakılır
+    settle()
+    step("konsol: satırda \" yazılır, boş satırda \" kapatır, yapay olayda tuş koduna bakılır", ok and con.is_open())
+
+    # komutlar
+    n0 = len(d.store.sorted())
+    code, out = con.execute("new")
+    page = win.page
+    con.execute('rename "Konsol notu"')
+    ok_new = code == 0 and win.page.title == "Konsol notu"
+    state.set_tool("pen")
+    drag(win.board.viewport(), [QPoint(300, 300), QPoint(360, 330), QPoint(420, 300)])
+    code, out = con.execute("status")
+    ok_status = code == 0 and "Konsol notu" in out
+    code, out = con.execute("notes konsol")
+    ok_notes = code == 0 and "▶" in out and "Konsol notu" in out
+    ok_tool = con.execute("tool text") == (0, "text") and state.tool == "text"
+    ok_tool = ok_tool and con.execute("tool yokboyle")[0] == 1
+    ok_color = con.execute("color red") == (0, "#ff453a") and con.execute("color 3")[1] == "#3ea6ff"
+    ok_color = ok_color and con.execute("color mor")[0] == 1
+    out_png = os.path.join(TMP, "konsol.png")
+    code, out = con.execute(f'export png "{out_png}"')
+    ok_exp = code == 0 and os.path.isfile(out_png)
+    code, out = con.execute("undo")
+    ok_undo = code == 0 and len(win.board.scene().content_items()) == 0
+    con.execute("redo")
+    ok_go = con.execute("go research") == (0, "research") and win.in_research()
+    ok_go = ok_go and con.execute("go board") == (0, "board") and not win.in_research()
+    other = next((p for p in d.store.sorted() if p is not page), None)
+    if other is not None:
+        con.execute(f"open {d.store.sorted().index(other) + 1}")
+        ok_go = ok_go and win.page is other
+        con.execute('open "Konsol notu"')
+        ok_go = ok_go and win.page is page
+    ok_err = con.execute("yokboyle")[0] == 2 and con.execute("open 999")[0] == 1
+    ok_err = ok_err and con.execute('open "kapanmamış')[0] == 1 and con.execute("pref tool") == (0, '"text"')
+    ok_err = ok_err and cli.run(None, ["notes"])[0] == 1 and cli.run(None, ["version"])[0] == 0
+    step("konsol: new / rename / status / notes / tool / color / export / undo / go / open, hatalar",
+         ok_new and ok_status and ok_notes and ok_tool and ok_color and ok_exp and ok_undo and ok_go and ok_err
+         and len(d.store.sorted()) >= n0)
+    # python -m yazit.cli yolu: gerçek yerel soket, app.serve (ayrı sunucu adı: kurulu yazıt'a gitmesin)
+    reply = cli.handle_request(d, '["status"]')
+    name = f"yazit-smoke-cli-{os.getpid()}"
+    QLocalServer.removeServer(name)
+    srv = QLocalServer()
+    srv.listen(name)
+    yapp.serve(srv, d)
+    box = {}
+    th = threading.Thread(target=lambda: box.update(r=cli.send(["tool"], name=name)))
+    th.start()
+    t0 = time.time()
+    while th.is_alive() and time.time() - t0 < 6:
+        pump(1)
+        time.sleep(0.005)
+    srv.close()
+    step("konsol: komut satırı tek örnek sunucusundan cevap alır",
+         b'"code": 0' in reply and box.get("r") == (0, state.tool))
+    if SHOTS:
+        con.execute("help")
+        pump()
+        shot(win, "70_konsol")
+        theme_ = prefs.get("theme")
+        con.execute("theme white")
+        pump()
+        shot(win, "71_konsol_acik")
+        con.execute("theme " + theme_)
+    con.execute("clear")
+    ok = con.output_text() == ""
+    con.edit.setText("not")
+    con._complete()
+    ok = ok and con.edit.text() == "notes "
+    con.edit.setText("go res")
+    con._complete()
+    ok = ok and con.edit.text() == "go research "
+    con.edit.setText("status")
+    con._submit()
+    ok = ok and prefs.get("console_history")[-1] == "status"
+    con.edit.setText("")
+    con.eventFilter(con.edit, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up, NOMOD))
+    ok = ok and con.edit.text() == "status"
+    con.execute("exit")
+    settle()
+    ok = ok and not con.is_open()
+    le = QLineEdit(win.area)
+    le.show()
+    le.setFocus()
+    pump()
+    if QApplication.focusWidget() is le:
+        ok = ok and not keys.handle(ckey())          # yazı alanında " normal yazılır
+    le.deleteLater()
+    ok = ok and keys.handle(ckey(shift=True))        # Shift+" modu kapatır
+    settle()
+    step("konsol: clear, Tab tamamlama, ↑ geçmiş, exit; yazı alanında \" yazılır; Shift+\" modu kapatır",
+         ok and not prefs.get("dev_mode") and not con.is_open())
+
+
 def main():
     from yazit.config import prefs
     for n in ("capture", "annotate", "note", "record"):
@@ -1818,6 +1960,8 @@ def main():
     from yazit.updater import is_newer, parse_version
     step("güncelleme: sürüm karşılaştırma", is_newer("v1.2.0", "1.1.0") and not is_newer("1.1.0", "1.1.0")
          and not is_newer("1.0.9", "1.1.0") and parse_version("v2") == (2, 0, 0))
+
+    console_steps(d)
 
     win.quit_app()
     pump()

@@ -1,9 +1,9 @@
-"""kamug bağlantıları (kamug = eski adıyla gamma, aynı ailenin medya oynatıcısı).
+"""kamug bağlantıları (kamug: aynı ailenin medya oynatıcısı).
 
-kamug'un transkriptten ürettiği notlarda yazının "ln" alanı {"kamug": video yolu, "t": saniye}; eski (gamma)
-notlarda {"gamma": video yolu, "t": saniye}. Önce "kamug" okunur, yoksa "gamma".
+kamug'un transkriptten ürettiği notlarda yazının "ln" alanı {"kamug": video yolu, "t": saniye}; eski sürüm notlarındaki
+anahtar da (LINK_KEYS) okunur.
 Ctrl+tık ya da sağ tık › "kamug'da aç" → kamug videoyu o saniyede açar (kamug.exe "video" --at=SANİYE).
-kamug yoksa eski gamma.exe denenir; o da yoksa video varsayılan programla açılır (zamansız)."""
+kamug yoksa eski sürümü denenir; o da yoksa video varsayılan programla açılır (zamansız)."""
 import os
 import sys
 
@@ -11,7 +11,7 @@ LINK_KEYS = ("kamug", "gamma")      # okuma sırası; yeni bağlantılar "kamug"
 
 
 def video_of(link):
-    """Bağlantının video yolu ("kamug", yoksa eski "gamma" anahtarı) ya da ""."""
+    """Bağlantının video yolu ("kamug", yoksa eski sürümün anahtarı) ya da ""."""
     if not isinstance(link, dict):
         return ""
     for k in LINK_KEYS:
@@ -61,7 +61,7 @@ def _uninstall_locations(prefix, exe):
 
 
 def find_kamug():
-    """Kurulu kamug.exe (kullanıcı başına kurulum, kayıt defterindeki kurulum yeri); yoksa eski gamma.exe; ya da None."""
+    """Kurulu kamug.exe (kullanıcı başına kurulum, kayıt defterindeki kurulum yeri); yoksa eski sürümü; ya da None."""
     local = os.environ.get("LOCALAPPDATA", "")
     pf = os.environ.get("ProgramFiles", r"C:\Program Files")
     cands = [os.path.join(local, "Programs", "kamug", "kamug.exe"), os.path.join(pf, "kamug", "kamug.exe")]

@@ -387,7 +387,7 @@ class MainWindow(QMainWindow):
             self.board.toast(t("cap_added"))
 
     def open_file(self, path):
-        """.yazit / .delta not dosyası (çift tık / komut satırı / sürükle-bırak): o notu açar."""
+        """.yazit not dosyası (çift tık / komut satırı / sürükle-bırak): o notu açar."""
         self.bring_front()
         p = self.store.open_file(path)
         if p is None:
@@ -454,6 +454,11 @@ class MainWindow(QMainWindow):
     def show_help(self):
         from .dialogs import HelpDialog
         HelpDialog(self).exec()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if getattr(self, "console", None) is not None:
+            self.console.reposition()
 
     def changeEvent(self, e):
         if e.type() == e.Type.WindowStateChange:

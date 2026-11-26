@@ -4,7 +4,7 @@ python main.py           pencereyle açılır
 python main.py --tray    sessizce tepside başlar (Windows ile başlat bunu kullanır)
 python main.py --snip    ekran alıntısını başlatır (masaüstündeki "yazıt alıntı" simgesi; yazıt kapalıysa tepside açılır)
 python main.py --quit    çalışan yazıt'ı notları kaydedip kapatır (kurulum / kaldırma kullanır)
-python main.py NOT.yazit  notu açar (eski .delta dosyaları da)
+python main.py NOT.yazit  notu açar (eski sürümün not dosyaları da)
 """
 import ctypes
 import os
@@ -42,6 +42,8 @@ class YazitApp(QObject):
         self.app = app
         from .theme import theme
         theme.apply()
+        from . import tamga_sync
+        tamga_sync.install(prefs, theme)
         from .pages import NoteStore
         from .window import MainWindow
         from .hotkeys import HotkeyManager
@@ -85,6 +87,8 @@ class YazitApp(QObject):
         self.annotate.export.connect(self.win.receive_image)
         self.hotkeys.triggered.connect(self.on_hotkey)
 
+        from .console import install as install_console
+        install_console(self)                    # Shift+" geliştirici modu, " konsol (console.py)
         self._make_tray()
         self.apply_hotkeys()
         if not start_hidden:
@@ -366,7 +370,7 @@ class YazitApp(QObject):
             self.capture.start(250)
         elif cmd == "quit":   # kurulum / kaldırma: notları kaydedip kapan
             self.win.quit_app()
-        elif cmd.startswith("open:"):   # .yazit / .delta dosyasına çift tık (kamug da böyle açar)
+        elif cmd.startswith("open:"):   # not dosyasına çift tık (kamug da böyle açar)
             from .config import remap_old_path
             self.win.open_file(remap_old_path(cmd[5:]))
 
@@ -412,7 +416,7 @@ def _selfcheck():
     for m in ("window", "canvas", "items", "pages", "capture", "annotate", "recorder", "pin", "hotkeys",
               "dialogs", "titlebar", "toolbar", "theme", "icons", "widgets", "winident", "ocr", "export", "updater",
               "recpanel", "loopback", "fonts", "fontpick", "pixels", "retouch", "brushes", "research", "shelf",
-              "readers", "research_view", "research_export", "kamuglink"):
+              "readers", "research_view", "research_export", "kamuglink", "cli", "console"):
         importlib.import_module("yazit." + m)
     try:                                   # araştırma modu PDF okuyucusu (pdfium.dll pakette mi?)
         import pypdfium2 as pdfium
@@ -430,6 +434,27 @@ def _selfcheck():
     ok = find_ffmpeg() is not None and not QImage(asset("logo.png")).isNull() and os.path.exists(asset("logo.ico")) \
         and os.path.exists(asset("snip.ico"))
     return 0 if ok else 3
+
+
+def serve(server, d):
+    """Tek örnek sunucusu: başka yazıt açılışlarından show / snip / quit / open:<yol>, yazit.cli'den komutlar gelir."""
+    def on_conn():
+        s = server.nextPendingConnection()
+        if s is None:
+            return
+
+        def read():
+            raw = bytes(s.readAll()).decode("utf-8", errors="ignore")
+            from .cli import CLI_TAG, handle_request
+            if raw.startswith(CLI_TAG):        # python -m yazit.cli: komutu çalıştır, cevabı geri yaz
+                s.write(handle_request(d, raw[len(CLI_TAG):]))
+                s.flush()
+                return
+            cmd = raw.strip()
+            QTimer.singleShot(0, lambda: d.handle_message(cmd))
+        s.readyRead.connect(read)
+        s.disconnected.connect(s.deleteLater)
+    server.newConnection.connect(on_conn)
 
 
 def main():
@@ -467,7 +492,7 @@ def main():
     snip = "--snip" in sys.argv
     hidden = "--tray" in sys.argv or snip
     from .config import migrate_user_dirs, remap_old_path, is_note_file
-    migrate_user_dirs()     # delta → yazıt: Resimler\delta vb. bir kez yeni ada taşınır
+    migrate_user_dirs()     # eski sürümün klasörleri bir kez yeni ada taşınır
     note_file = next((remap_old_path(a) for a in sys.argv[1:] if is_note_file(a)), None)
     if note_file and not os.path.isfile(note_file):
         note_file = None
@@ -482,17 +507,7 @@ def main():
 
     d = YazitApp(app, start_hidden=hidden)
 
-    def on_conn():
-        s = server.nextPendingConnection()
-        if s is None:
-            return
-
-        def read():
-            cmd = bytes(s.readAll()).decode("utf-8", errors="ignore").strip()
-            QTimer.singleShot(0, lambda: d.handle_message(cmd))
-        s.readyRead.connect(read)
-        s.disconnected.connect(s.deleteLater)
-    server.newConnection.connect(on_conn)
+    serve(server, d)
     app._yazit = d
     if snip:
         QTimer.singleShot(300, lambda: d.handle_message("snip"))

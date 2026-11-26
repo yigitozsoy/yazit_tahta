@@ -253,7 +253,7 @@ class TextItem(QGraphicsTextItem):
         self.bold = self.italic = self.underline = False
         self.align = "left"
         self.family = ""          # "" = arayüz yazı tipi; kayıtta "ff"
-        self.link = None          # kamug bağlantısı {"kamug": video, "t": sn} (eski notlarda "gamma"); kayıtta "ln" (kamuglink.py)
+        self.link = None          # kamug bağlantısı {"kamug": video, "t": sn}; kayıtta "ln" (kamuglink.py)
         self.document().setDocumentMargin(4)
         self.apply_font()
         self.setPlainText(text)

@@ -3,8 +3,8 @@
 ; Yönetici izni istemez: varsayılan olarak %LOCALAPPDATA%\Programs\yazit klasörüne kurulur.
 ; Kullanıcı verileri (%LOCALAPPDATA%\yazit: tercihler, önbellek; notlar Resimler\yazit) kaldırmada SİLİNMEZ.
 ;
-; delta'dan yükseltme: AppId aynı (delta'nın kurulumu yerinde güncellenir, Programlar listesinde tek kayıt kalır)
-; ama klasör yeni (UsePreviousAppDir=no → {autopf}\yazit). Kurulum bitince eski klasördeki delta dosyaları silinir,
+; eski sürümden yükseltme: AppId aynı (eski sürümün kurulumu yerinde güncellenir, Programlar listesinde tek kayıt kalır)
+; ama klasör yeni (UsePreviousAppDir=no → {autopf}\yazit). Kurulum bitince eski klasördeki eski sürümün dosyaları silinir,
 ; eski kısayollar / App Paths / Run değeri kaldırılır. .delta türü kayıtlı kalır (ProgID adı "delta.Note" değişmez:
 ; Windows'un varsayılan uygulama seçimi (UserChoice) bu ada bağlı; adı değişirse Windows güvenlik uyarısı sorar),
 ; yalnızca komutu ve simgesi yazit.exe'ye çevrilir. Yeni notlar .yazit (ProgID "yazit.Note").
@@ -18,7 +18,7 @@
 #define AppGuid "{274E63FA-2C5A-402B-BC02-3F663C51EDA8}"
 
 [Setup]
-; AppId delta ile aynı: yükseltme. DEĞİŞTİRME.
+; AppId eski sürümle aynı: yükseltme. DEĞİŞTİRME.
 AppId={{274E63FA-2C5A-402B-BC02-3F663C51EDA8}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -26,7 +26,7 @@ AppVerName={#AppName} {#AppVersion}
 AppPublisher=tamga
 DefaultDirName={autopf}\{#AppDir}
 DefaultGroupName={#AppName}
-; delta'nın klasörü / Başlat grubu yeniden kullanılmasın
+; eski sürümün klasörü / Başlat grubu yeniden kullanılmasın
 UsePreviousAppDir=no
 UsePreviousGroup=no
 DisableProgramGroupPage=yes
@@ -50,7 +50,7 @@ WizardStyle=modern
 ; yazıt tepside çalışır; kapatma işini aşağıda "yazit.exe --quit" ile kendimiz yapıyoruz
 CloseApplications=no
 RestartApplications=no
-; .yazit / .delta not dosyaları yazıt ile açılır (Gezgin simgeleri yenilensin)
+; .yazit (ve eski uzantılı) not dosyaları yazıt ile açılır (Gezgin simgeleri yenilensin)
 ChangesAssociations=yes
 
 [Languages]
@@ -70,8 +70,8 @@ turkish.SnipDesc=Ekran alıntısı al (yazıt kapalıysa tepside açılır)
 english.SnipDesc=Take a screen snip (starts yazıt in the tray if it is not running)
 turkish.NoteType=yazıt notu
 english.NoteType=yazıt note
-turkish.OldNoteType=yazıt notu (eski delta)
-english.OldNoteType=yazıt note (old delta)
+turkish.OldNoteType=yazıt notu
+english.OldNoteType=yazıt note
 turkish.LaunchApp=yazıt'ı aç
 english.LaunchApp=Open yazıt
 
@@ -85,7 +85,7 @@ Source: "..\build\dist\{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recu
 [InstallDelete]
 ; güncellemede eski sürümden kalan Python / Qt dosyaları karışmasın
 Type: filesandordirs; Name: "{app}\_internal"
-; delta'nın kısayolları (Başlat grubu "delta", masaüstü; alıntı kısayolu Türkçe / İngilizce adla)
+; eski sürümün kısayolları (eski Başlat grubu, masaüstü; alıntı kısayolu Türkçe / İngilizce adla)
 Type: files; Name: "{autoprograms}\delta\delta.lnk"
 Type: files; Name: "{autoprograms}\delta\delta alıntı.lnk"
 Type: files; Name: "{autoprograms}\delta\delta snip.lnk"
@@ -105,7 +105,7 @@ Name: "{autodesktop}\{cm:SnipName}"; Filename: "{app}\{#AppExe}"; Parameters: "-
 ; "Windows ile başlat" — uygulamanın Seçenekler'deki anahtarıyla aynı kayıt (HKCU Run → yazit)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "yazit"; ValueData: """{app}\{#AppExe}"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "yazit"; ValueType: none; Flags: deletevalue uninsdeletevalue; Tasks: not autostart
-; delta'nın eski kayıtları: Run değeri, App Paths, "Birlikte aç" listesinde Windows'un açtığı Applications\delta.exe
+; eski sürümün eski kayıtları: Run değeri, App Paths, "Birlikte aç" listesinde Windows'un açtığı Applications\<eski exe>
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "delta"; ValueType: none; Flags: deletevalue
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\{#OldExe}"; Flags: deletekey
 Root: HKCU; Subkey: "Software\Classes\Applications\{#OldExe}"; Flags: deletekey
@@ -126,7 +126,7 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postin
 
 [Code]
 var
-  OldAppDir: String;   // delta'nın kurulu olduğu klasör (yükseltmede; yoksa boş)
+  OldAppDir: String;   // eski sürümün kurulu olduğu klasör (yükseltmede; yoksa boş)
 
 // /NOQUIT parametresi: test kurulumu çalışan yazıt'a dokunmasın
 function ShouldQuitRunning(): Boolean;
@@ -134,7 +134,7 @@ begin
   Result := ExpandConstant('{param:NOQUIT|0}') = '0';
 end;
 
-// Önceki kurulumun klasörü (aynı AppId'nin kaldırma kaydından): delta'dan yükseltmede eski klasör
+// Önceki kurulumun klasörü (aynı AppId'nin kaldırma kaydından): eski sürümden yükseltmede eski klasör
 function PreviousAppDir(): String;
 var
   Key: String;
@@ -180,11 +180,11 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   QuitRunning(ExpandConstant('{app}\{#AppExe}'), '{#AppExe}');
   if IsOldDirToClean() then
-    QuitRunning(AddBackslash(OldAppDir) + '{#OldExe}', '{#OldExe}');   // delta'dan yükseltme: eski delta kapansın
+    QuitRunning(AddBackslash(OldAppDir) + '{#OldExe}', '{#OldExe}');   // eski sürümden yükseltme: eski exe kapansın
   Result := '';
 end;
 
-// delta'nın eski kurulum klasörünü kaldırır. Varsayılan adlı klasör ("delta") tümüyle silinir; kullanıcı başka bir
+// eski sürümün eski kurulum klasörünü kaldırır. Varsayılan adlı klasör  tümüyle silinir; kullanıcı başka bir
 // klasör seçtiyse yalnızca kurulumun koyduğu dosyalar silinir, klasör boşsa kaldırılır (başka dosyalara dokunulmaz).
 procedure CleanOldAppDir();
 var

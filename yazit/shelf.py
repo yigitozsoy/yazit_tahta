@@ -209,6 +209,7 @@ class Slot:
 class Shelf(QWidget):
     activated = pyqtSignal(object)          # Source
     files_dropped = pyqtSignal(list)
+    links_dropped = pyqtSignal(list)       # web adresleri (tarayıcıdan sürüklenen bağlantı)
     changed_type = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -445,7 +446,7 @@ class Shelf(QWidget):
 
     # ---- sürükle bırak
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
+        if e.mimeData().hasUrls():          # dosya ya da web bağlantısı
             e.acceptProposedAction()
             self._drag_on = True
             self.update()
@@ -459,11 +460,15 @@ class Shelf(QWidget):
 
     def dropEvent(self, e):
         self._drag_on = False
-        paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
+        urls = e.mimeData().urls()
+        paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
+        links = [u.toString() for u in urls if u.scheme() in ("http", "https")]
         e.acceptProposedAction()
         self.update()
         if paths:
             self.files_dropped.emit(paths)
+        if links:
+            self.links_dropped.emit(links)
 
     # ---- çizim
     def paintEvent(self, e):

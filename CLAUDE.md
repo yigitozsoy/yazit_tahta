@@ -1,15 +1,14 @@
 # yazıt — Claude için proje notları
 
-**yazıt** (eski adı **delta**; ASCII biçimi `yazit`), **tamga** ailesinin not uygulaması, kamug'un
-(eski adı gamma) kardeşi: toplantıda bir şey anlatmak ve aklına geleni not almak için
+**yazıt** (ASCII biçimi `yazit`), **tamga** ailesinin not uygulaması, kamug'un
+kardeşi: toplantıda bir şey anlatmak ve aklına geleni not almak için
 **çizim tahtası + ekran alıntısı + ekrana çizim** aracı. Tema, renkler, başlık çubuğu, ikonlar kamug ile aynı
 (`C:\Users\yigit\OneDrive\Desktop\kamug` — kamug'un deposu, tasarım referansı orası; onun CLAUDE.md'sindeki çalışma tarzı
 kuralları burada da geçerli: Türkçe, sade varsayılanlar, gri vurgu, mor yok, önce çalıştırıp doğrula).
 
 - Python 3.14 · PyQt6 (Pillow isteğe bağlı) · yalnızca Windows 10/11
 - Sürüm: `yazit/__init__.py` → `__version__`
-- Repo: https://github.com/yigitozsoy/yazit_tahta (herkese açık; sürümler Releases'ta, kurulum + zip). Eski adı
-  delta_board; GitHub eski adresi yönlendirir (eski sürümlerin güncelleme denetimi de çalışır). `__init__.REPO`.
+- Repo: https://github.com/yigitozsoy/yazit_tahta (herkese açık; sürümler Releases'ta, kurulum + zip). `__init__.REPO`.
   Commit kimliği yerel: `Yiğit Özsoy <yigitozsoy@users.noreply.github.com>`. Push / etiket / release öncesi onay al
   (kullanıcı "commit et githuba koy, sorma" dediyse doğrudan yap).
 - Çalıştır: `python main.py` · tepside sessiz başlat: `python main.py --tray` · alıntı başlat: `--snip`
@@ -26,40 +25,39 @@ kuralları burada da geçerli: Türkçe, sade varsayılanlar, gri vurgu, mor yok
   test kurulumunda `/NOQUIT=1` ver — ama yazıt o klasörden çalışıyorsa VERME: [InstallDelete] `_internal`'ı siler,
   kullanımdaki dosyalar yazılamaz, kurulu kopya "Failed to import encodings" hatasıyla açılmaz hale gelir. Veriler (%LOCALAPPDATA%\yazit, Resimler\yazit) kaldırmada silinmez.
 
-## Ad değişikliği: delta → yazıt (tamga ailesi)
+## Adlar ve uyumluluk (tamga ailesi)
 Aile adı **tamga** (hep küçük harf). Görünen ad her yerde **yazıt** (noktasız ı; `t("app_name")`), ASCII biçimi
 **yazit**: paket `yazit/`, `yazit.exe`, `{autopf}\yazit`, `packaging/yazit.spec`, `%LOCALAPPDATA%\yazit`, tek örnek
 sunucusu `yazit-single-instance-v1`, AppUserModelID `tamga.yazit`, HKCU Run değeri `yazit`, geçici dosya önekleri
-`yazit-…`, çıktı `yazit-setup-X.exe` / `yazit-portable-X.zip`. Kardeş oynatıcı gamma'nın yeni adı **kamug**.
-- **Bilerek eski kalanlar** (iç veri, değişirse eski notlar / araştırmalar bozulur): not JSON'unda
-  `"format": "delta-note"`, araştırma dosyası `araştırma.delta-research` (`"format": "delta-research"`), araştırma
-  sayfasındaki bağlantılar `delta-src:` / `delta-note:`, tercih anahtarı `notes_dir` (kamug da okur).
-- **Not uzantısı**: yeni notlar `.yazit` (`config.NOTE_EXT`); `.delta` her yerde okunur (`config.NOTE_EXTS`,
+`yazit-…`, çıktı `yazit-setup-X.exe` / `yazit-portable-X.zip`. Kardeş oynatıcı **kamug**.
+- **Kullanıcı uygulamaların eski adlarını (gamma, alpha, beta, delta) hiçbir yerde görmek istemiyor** (2026-11-22):
+  arayüzde, README'de, yorumlarda, notlarda hep yeni adları yaz, "eski sürüm" de. Eski ad yalnızca aşağıdaki,
+  değişirse eski notları / araştırmaları / kurulumu bozan kimliklerde kalır.
+- **İç kimlikler (değiştirme)**: not JSON'unda `"format": "delta-note"`, araştırma JSON'unda `"format": "delta-research"`,
+  araştırma sayfasındaki bağlantılar `delta-src:` / `delta-note:`, tercih anahtarı `notes_dir` (kamug da okur),
+  Inno AppId (`{274E63FA-…}`), eski ProgID `delta.Note` (UserChoice ProgID adına bağlı; görünen adı "yazıt notu").
+- **Araştırma dosyası** `araştırma.yazit-research` (gizli). Eski sürümün `araştırma.delta-research` dosyası araştırma
+  açılınca yeni ada çevrilir (`research._meta_path`; olmazsa eskisi kullanılır).
+- **Not uzantısı**: yeni notlar `.yazit` (`config.NOTE_EXT`); eski sürümün uzantısı her yerde okunur (`config.NOTE_EXTS`,
   `is_note_file`: klasör taraması, komut satırı, "open:" iletisi, tuvale sürükle-bırak). Var olan dosyanın uzantısı
-  korunur (`pages.file_ext`): eski bir .delta notu yeniden adlandırılınca / taşınınca / çöpe gidince .delta kalır.
-- **Klasör taşıma** (`config._migrate_dir`; hiçbir şey silinmez, üzerine yazılmaz): `%LOCALAPPDATA%\delta` →
-  `yazit` config içe aktarılırken; Resimler / Videolar / Belgeler altındaki `delta` → `yazit` açılışta
-  (`app.main` → `migrate_user_dirs`, ayrıca ilk `default_dir` çağrısında). Kural: eski var, yeni yoksa os.rename;
-  yeni klasör boşsa önce o kaldırılır (rmdir, yalnızca boşsa); taşınamazsa o açılışta eski klasör kullanılır;
+  korunur (`pages.file_ext`).
+- **Klasör taşıma** (`config._migrate_dir`, `OLD_DIR_NAME`; hiçbir şey silinmez, üzerine yazılmaz): eski
+  `%LOCALAPPDATA%` klasörü config içe aktarılırken, Resimler / Videolar / Belgeler altındakiler açılışta
+  (`app.main` → `migrate_user_dirs`, ayrıca ilk `default_dir` çağrısında) yazit'e taşınır. Kural: eski var, yeni yoksa
+  os.rename; yeni klasör boşsa önce o kaldırılır (rmdir, yalnızca boşsa); taşınamazsa o açılışta eski klasör kullanılır;
   ikisi de doluysa ikisine de dokunulmaz, eski kullanılmaya devam eder. Bir yol tercihi (notes_dir, snapshot_dir,
   video_dir, research_dir) eski klasörün içini gösteriyorsa o klasör taşınmaz. Taşınınca research_recent /
   research_last / external_notes yolları yeni klasöre çevrilir; eski yolla gelen dosya (`remap_old_path`) yeni yola.
 - **kamug ile sözleşme**: kamug notu `<notes_dir>\kamug\<başlık>.yazit` olarak yazıp `yazit.exe <yol>` çalıştırır;
-  notes_dir'i `%LOCALAPPDATA%\yazit\preferences.json`'dan (yoksa `…\delta\…`) okur, boşsa Resimler\delta varsa
-  onu, yoksa Resimler\yazit'i kullanmalı (yazıt henüz taşımadıysa da aynı klasör; taşıyınca yol `remap_old_path` ile
-  düzelir). Bağlantı `"ln": {"kamug": video, "t": sn}`; yazıt `kamug.exe video --at=sn` çalıştırır.
-- **Kurulum (yükseltme)**: AppId delta ile AYNI (`{274E63FA-…}`) → Programlar'da tek kayıt, yerinde güncelleme;
+  notes_dir'i `%LOCALAPPDATA%\yazit\preferences.json`'dan okur, boşsa Resimler\yazit (yazıt henüz taşımadıysa eski
+  klasör; taşıyınca yol `remap_old_path` ile düzelir). Bağlantı `"ln": {"kamug": video, "t": sn}`; yazıt
+  `kamug.exe video --at=sn` çalıştırır.
+- **Kurulum (yükseltme)**: AppId eski sürümle AYNI → Programlar'da tek kayıt, yerinde güncelleme;
   `UsePreviousAppDir=no` / `UsePreviousGroup=no` → yeni klasör `{autopf}\yazit`, Başlat'ta "yazıt". [Code]
-  `InitializeSetup` eski klasörü kaldırma kaydındaki `Inno Setup: App Path`'ten okur; `PrepareToInstall` eski
-  `delta.exe --quit` + taskkill; ssPostInstall'da eski klasör (içinde delta.exe varsa ve {app}'ten farklıysa)
-  silinir: adı "delta" ise DelTree, değilse yalnızca kurulumun dosyaları (delta.exe, _internal, LICENSE.txt,
-  unins000.*) + boşsa klasör. [InstallDelete] eski kısayolları (Başlat\delta\delta.lnk, "delta alıntı" / "delta
-  snip", masaüstündekiler) siler; [Registry] eski Run "delta" değerini, `App Paths\delta.exe`'yi ve
-  `HKCU\Software\Classes\Applications\delta.exe`'yi siler. Eski kurulum `Software\delta` ya da RegisteredApplications
-  yazmamıştı; başka programlara ait olabilecekleri için onlara dokunulmaz.
-- **ProgID'ler**: `.delta` → `delta.Note` adı BİLEREK aynı kalır (Windows'un varsayılan uygulama seçimi / UserChoice
-  ProgID adına bağlı; ad değişirse Windows o dosyalarda güvenlik uyarısı / "nasıl açmak istersiniz" sorar). Yalnızca
-  komutu (`yazit.exe "%1"`), simgesi ve görünen adı ("yazıt notu (eski delta)") değişir. Yeni `.yazit` → `yazit.Note`.
+  `InitializeSetup` eski klasörü kaldırma kaydındaki `Inno Setup: App Path`'ten okur; `PrepareToInstall` eski exe'yi
+  `--quit` + taskkill ile kapatır; ssPostInstall'da eski klasör ({app}'ten farklıysa) silinir. [InstallDelete] eski
+  kısayolları, [Registry] eski Run değerini, App Paths ve `Applications\<eski exe>` kayıtlarını siler. Başka
+  programlara ait olabilecek kayıtlara (Software\…, RegisteredApplications) dokunulmaz.
 
 ## Klasör yapısı
 ```
@@ -111,9 +109,16 @@ yazit/
   annotate.py         ekrana çiz katmanı (saydam, her zaman üstte; "fareyi bırak" = WS_EX_TRANSPARENT)
   hotkeys.py          global kısayollar (RegisterHotKey + QAbstractNativeEventFilter, hwnd=NULL)
   dialogs.py          Seçenekler, Fare/klavye yardımı, Windows ile başlat (HKCU Run)
+  cli.py · console.py komut kapısı run(app, argv) → (kod, metin) (app = YazitApp): status / notes / open / new / rename /
+                      folders / go board|research|<not> / export png|jpg|pdf|all / tool / color / width / undo / snip /
+                      theme / pref …; `python -m yazit.cli <komut>` çalışan yazıt'a tek örnek sunucusundan gider
+                      ("cli
+" + JSON, app.serve cevabı geri yazar). Geliştirici konsolu: Esc'nin altındaki tuş (tarama
+                      kodu 41, TR-Q "): Shift+" prefs dev_mode, mod açıkken " konsolu açar/kapatır, başlık çubuğunun
+                      altından tahtanın üstüne iner. Smoke'ta `console_steps(d)` (kayıtsız, offscreen tek başına çağrılabilir).
   research.py         araştırma modeli: Research(klasör) — tarama (alt klasörler, QFileSystemWatcher), dosyadan
                       bilgi (pypdfium2: sayfa / başlık / ISBN / ilk satırlar; docx core.xml; ffmpeg süre; döküm),
-                      tür tahmini, `araştırma.delta-research` JSON (adı bilerek eski kaldı); son araştırmalar (prefs research_recent / _last)
+                      tür tahmini, `araştırma.yazit-research` JSON; son araştırmalar (prefs research_recent / _last)
   shelf.py            raf (QPainter): kitap sırtı / kâğıt / VHS kaset / polaroid / fiş; hover animasyonu; sitenin
                       paleti `rp()` (DARK / LIGHT); sağ tık tür / başlık / yazar; dosya bırak → klasöre kopya
   readers.py          okuyucular: PdfView (seç, Ctrl+F, vurgu, copied sinyali), ProseView (docx → HTML kendi
@@ -121,23 +126,23 @@ yazit/
   research_view.py    ResearchView: ana ekran (Home) | QSplitter raf · sekmeler (0 = ResearchPage) · NotesColumn;
                       alıntı kartı (tek-hücreli QTextTable, künye anchorHref "delta-src:yol#p=&a=&n=" / "#t="),
                       içindekiler, bağlı notlar (anchorHref "delta-note:id") + NoteLinks üst katmanı (halka + ok)
-  kamuglink.py        kamug (eski gamma) bağlantısı: notlardaki "ln" alanı, kamug.exe'yi bulma, video --at=sn
+  kamuglink.py        kamug bağlantısı: notlardaki "ln" alanı, kamug.exe'yi bulma, video --at=sn
   research_export.py  Markdown / PDF / yigitozsoy.net biçiminde tek dosya HTML (raf CSS'i, kenar notu JS'i)
   theme.py icons.py widgets.py titlebar.py i18n.py config.py
   assets/             logo.png (beyaz Göktürk "y" — kalın D gibi; arayüzde renklendirilir), logo.ico, snip.ico
                       (`packaging/make_logo.py` üretir; kamug'un logo üreticisiyle aynı tarz)
 ```
-Notlar: `Resimler\yazit\[Klasör\]Başlık.yazit` (`config.notes_root`, prefs `notes_dir`). .yazit (eski .delta) = JSON
+Notlar: `Resimler\yazit\[Klasör\]Başlık.yazit` (`config.notes_root`, prefs `notes_dir`). .yazit = JSON
 {"format": "delta-note", "version": 2, "id", "meta", "items"}; dosya adı başlıktan (`pages.safe_name`, ":" → "."),
 başlık değişince dosya yeniden adlandırılır (dışarıdan açılan dosyalar hariç: `Page.external`, prefs `external_notes`).
-Klasör = tek düzey alt klasör (kimliği = adı; açık/kapalı prefs `folder_open`). Çift tık: kurulum `.yazit` / `.delta` →
+Klasör = tek düzey alt klasör (kimliği = adı; açık/kapalı prefs `folder_open`). Çift tık: kurulum `.yazit` (ve eski uzantı) →
 `yazit.exe "%1"` kaydeder; çalışan yazıt'a "open:<yol>" iletilir (`MainWindow.open_file`).
 kamug bağlantısı: kamug'un transkriptten ürettiği notlarda (`<notes_dir>\kamug\Başlık.yazit`) yazı öğesinde `"ln": {"kamug": video,
-"t": sn}` (eski notlarda `"gamma"` anahtarı: önce "kamug", yoksa "gamma" okunur; yüklenince "kamug"a çevrilir)
+"t": sn}` (eski notlardaki anahtar da `LINK_KEYS` ile okunur; yüklenince "kamug"a çevrilir)
 (`TextItem.link`, `kamuglink.video_of / make_link`). Ctrl+tık ya da sağ tık "kamug'da aç" → `kamuglink.open_link` →
 `kamug.exe video --at=sn` (`find_kamug`: %LOCALAPPDATA%\Programs\kamug\kamug.exe, Program Files, kaldırma kaydında
-DisplayName "kamug" ile başlayan → InstallLocation\kamug.exe; yoksa aynı sırayla eski gamma.exe)
-(kamug / gamma yoksa video varsayılan programla açılır). Bağlantı kopyala/yapıştırda korunur (to_dict).
+DisplayName "kamug" ile başlayan → InstallLocation\kamug.exe; yoksa aynı sırayla eski sürümü)
+(kamug yoksa video varsayılan programla açılır). Bağlantı kopyala/yapıştırda korunur (to_dict).
 `%LOCALAPPDATA%\yazit\` → `preferences.json`, `thumbs\<id>.png`, `notes_cache.json` (yol → boyut/tarih/özet:
 açılışta her dosyayı okumamak için), `trash\` (silinen notlar), `error.log`, `notes\` (1.2'nin eski notları:
 her not bir kez .yazit'e taşınır — `NoteStore.migrate_legacy`, prefs `migrated_ids` — silinmez).
@@ -231,7 +236,7 @@ Alıntı / PNG: Resimler\yazit. Video: Videolar\yazit (`video_dir`).
   Win+Shift+A ve Win+Shift+R bu bilgisayarda Windows tarafından alınmış (RegisterHotKey başarısız) — bu yüzden X ve E.
 - **Araştırma modu (1.4)**: `MainWindow.modes` (QStackedWidget: 0 tahta, 1 `ResearchView`), Ctrl+Shift+R /
   `titlebar.btn_research`; prefs mode, research_last, research_split, research_dir (boş = Belgeler\yazit\Araştırmalar).
-  Araştırma = klasör; bilgi klasördeki gizli `araştırma.delta-research` (sources = kullanıcı değişiklikleri, probe =
+  Araştırma = klasör; bilgi klasördeki gizli `araştırma.yazit-research` (sources = kullanıcı değişiklikleri, probe =
   mtime/boyutla önbellek, page.html, notes, highlights[yol], exports). Dışa aktarılanlar `exports`'a yazılır → rafa
   kaynak olarak girmez. Tür: ISBN ya da ≥80 sayfa / ≥30000 sözcük → kitap. PDF yılı okunmaz (CreationDate tarama tarihi).
   Tuzaklar: temanın genel QSS'i `setFont`'u ezer → araştırma yazı tipleri QSS'te (Oswald / JetBrains Mono / Caveat /
@@ -250,6 +255,15 @@ Alıntı / PNG: Resimler\yazit. Video: Videolar\yazit (`video_dir`).
   paleti `rp_variant(False)`) bunu okur. Değişince `theme.changed` → `ResearchView.restyle()`: QSS, raf yerleşimi,
   sekme adları, okuyucular (`restyle`: ProseView kaynağı `set_content` ile saklar, yeniden çizer) ve sayfa
   (`normalize` başlık / metin / alıntı / künye yazı tiplerini de temaya çevirir).
+- **Kaynak bul (3.x)**: sağ sütunun üstünde `findpanel.FindPanel` (ResearchView.finder; NotesColumn düzenine 0. sıra).
+  Bağlantı / DOI yapıştırınca (ya da rafa web bağlantısı bırakınca: `Shelf.links_dropped`) sormadan getirir; sözcük +
+  Enter → OpenAlex araması, kartta İndir / Ekle. Ağ `finder.py` (urllib, arka plan iş parçacığı → Qt sinyali, iş
+  kimliğiyle): ScienceDirect pii → Crossref alternative-id → DOI → OpenAlex (yoksa Crossref); arXiv; /doi/ adresleri;
+  başka sayfa → citation_* meta. Yalnızca açık PDF indirilir (pdf_url'ler, sonra açık kopya sayfaları `lands`:
+  PMC / depo; çoğu bot korumalı, 403 olabilir); %PDF ile doğrulanır. Olmazsa `.url` yazılır, bilgiler
+  `set_override` (title / author / year / doi / url, type article|book). "Tarayıcıda aç" → `DownloadWatch`
+  İndirilenler'i 15 dk yoklar, yeni PDF'i klasöre KOPYALAR, kendi yazdığı .url'yi siler. E-posta / kişisel bilgi
+  isteklere konmaz (Unpaywall bu yüzden yok); UA `yazit/<sürüm> (+repo)`. İnternet yoksa `finder.OFFLINE`.
 - **Yazı tipi yükleme**: Qt, yolu ASCII dışı harf içeren dosyayı (`yazıt\…` klasörü) `addApplicationFont` ile
   açamayabiliyor (sessizce Segoe UI'ye düşer) → hep `fonts.add_font_file` (olmazsa dosya içeriğinden yükler).
 - **Kayıt paneli (1.4)**: akış panel → (alan seçimi) → geri sayım → kayıt (`YazitApp.toggle_record`; kısayol

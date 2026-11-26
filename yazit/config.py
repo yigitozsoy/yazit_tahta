@@ -1,6 +1,6 @@
 """Uygulama yolları ve kalıcı tercihler (%LOCALAPPDATA%\\yazit\\preferences.json).
 
-Ad değişikliği (delta → yazıt): eski klasörler bir kez yeni ada taşınır (os.rename; hiçbir şey silinmez,
+Eski sürümün klasörler bir kez yeni ada taşınır (os.rename; hiçbir şey silinmez,
 üzerine yazılmaz). Taşıma olmazsa o açılışta eski klasör kullanılır."""
 import json
 import os
@@ -15,7 +15,7 @@ else:
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 NOTE_EXT = ".yazit"             # yeni notların uzantısı
-NOTE_EXTS = (".yazit", ".delta")   # açılan / listelenen not uzantıları (eski .delta notları da)
+NOTE_EXTS = (".yazit", ".delta")   # açılan / listelenen not uzantıları (eski sürümünkü dahil)
 
 
 def is_note_file(path) -> bool:
@@ -23,7 +23,7 @@ def is_note_file(path) -> bool:
 
 
 APP_DIR_NAME = "yazit"          # klasör / kayıt adları (ASCII); görünen ad "yazıt"
-OLD_DIR_NAME = "delta"          # eski ad: klasörler bir kez taşınır
+OLD_DIR_NAME = "delta"          # eski sürümün klasör adı: bir kez taşınır
 _renamed = {}                   # bu açılışta taşınan klasörler: eski yol → yeni yol (eski yolla gelen dosyalar için)
 
 
@@ -110,6 +110,8 @@ DEFAULTS = {
     "last_shape": "arrow",
     "eng_shapes": False,      # şekil menüsünde mühendislik şekilleri (Seçenekler)
     "custom_color": "#b0b0b0",
+    "dev_mode": False,          # Shift+" ile açılır; açıkken " geliştirici konsolunu açar (console.py)
+    "console_history": [],
 }
 
 
@@ -188,7 +190,7 @@ def _std_location(kind):
 
 
 def default_dir(kind, *sub):
-    r"""Varsayılan kullanıcı klasörü: <Resimler|Videolar|Belgeler>\yazit[\sub]. Eski <…>\delta varsa bir kez
+    r"""Varsayılan kullanıcı klasörü: <Resimler|Videolar|Belgeler>\yazit[\sub]. Eski sürümün klasörü varsa bir kez
     yazit'e taşınır (hiçbir tercih onun içini göstermiyorsa). Taşınamazsa o açılışta eskisi kullanılır;
     ikisi de doluysa eski klasör kullanılmaya devam eder (notlar listede kaybolmasın)."""
     key = (kind, sub)
@@ -220,7 +222,7 @@ def video_dir() -> str:
 
 
 def notes_root() -> str:
-    """Notların (.yazit; eski .delta da okunur) klasörü: varsayılan Resimler\\yazit (alıntılarla aynı yer).
+    """Notların (.yazit) klasörü: varsayılan Resimler\\yazit (alıntılarla aynı yer).
     Alt klasörler not klasörleridir."""
     d = prefs.get("notes_dir") or default_dir("PicturesLocation")
     os.makedirs(d, exist_ok=True)

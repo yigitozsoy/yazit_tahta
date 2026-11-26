@@ -1,7 +1,7 @@
 """Araştırma modu — model: bir araştırma = bir klasör.
 
 Klasördeki dosyalar kaynaklardır (alt klasörler dahil, gizli dosyalar hariç). Araştırmanın kendi bilgisi klasördeki
-`araştırma.delta-research` (JSON) dosyasında:
+`araştırma.yazit-research` (JSON) dosyasında:
   {"format": "delta-research", "version": 1, "title", "created",
    "sources": {göreli yol: {"type", "title", "author", "year", ...elle değiştirilenler}},
    "probe":   {göreli yol: {"m": mtime, "s": boyut, ...dosyadan okunanlar}},   (önbellek; değişince yeniden okunur)
@@ -22,8 +22,24 @@ from PyQt6.QtCore import QObject, QTimer, QFileSystemWatcher, pyqtSignal
 
 from .config import prefs, research_root
 
-META_FILE = "araştırma.delta-research"
-FORMAT = "delta-research"
+META_FILE = "araştırma.yazit-research"
+OLD_META_FILE = "araştırma.delta-research"   # eski sürümlerin dosya adı: açılınca yeni ada çevrilir
+FORMAT = "delta-research"                    # iç biçim adı (dosyanın içinde), uyumluluk için değişmez
+
+
+def _meta_path(folder, migrate=False):
+    """Klasörün araştırma dosyası. Yalnızca eski adlı dosya varsa: migrate=True ise yeni ada çevrilir
+    (olmazsa — dosya kilitli vb. — eskisi kullanılır), değilse eskisinin yolu döner."""
+    new, old = os.path.join(folder, META_FILE), os.path.join(folder, OLD_META_FILE)
+    if os.path.exists(new) or not os.path.exists(old):
+        return new
+    if migrate:
+        try:
+            os.rename(old, new)
+            return new
+        except OSError:
+            pass
+    return old
 
 EXT_KIND = {}
 for _k, _exts in {
@@ -271,7 +287,7 @@ class Research(QObject):
     def __init__(self, folder):
         super().__init__()
         self.folder = os.path.abspath(folder)
-        self.meta_path = os.path.join(self.folder, META_FILE)
+        self.meta_path = _meta_path(self.folder, migrate=True)
         self.data = {"format": FORMAT, "version": 1, "title": os.path.basename(self.folder),
                      "created": datetime.now().isoformat(timespec="seconds"),
                      "sources": {}, "probe": {}, "page": {}, "notes": [], "highlights": {}}
@@ -344,7 +360,7 @@ class Research(QObject):
             for d in dnames:
                 dirs.append(os.path.join(root, d))
             for n in sorted(fnames, key=str.lower):
-                if n.startswith((".", "~$")) or n == META_FILE or n.endswith(".tmp"):
+                if n.startswith((".", "~$")) or n in (META_FILE, OLD_META_FILE) or n.endswith(".tmp"):
                     continue
                 if os.path.relpath(os.path.join(root, n), self.folder).replace("\\", "/") in exports:
                     continue          # yazıt'ın dışa aktardığı dosya kaynak sayılmaz
@@ -530,7 +546,7 @@ def peek(folder):
     title = os.path.basename(folder)
     n = None
     try:
-        with open(os.path.join(folder, META_FILE), "r", encoding="utf-8") as f:
+        with open(_meta_path(folder), "r", encoding="utf-8") as f:
             d = json.load(f)
         title = d.get("title") or title
         n = len(d.get("probe") or {})

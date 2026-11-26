@@ -1,5 +1,5 @@
 """yazıt logosu: Göktürk "y" harfi (kalın bir "D" gibi: solda dikey gövde, düz üst ve alt kollar, sağda yarım daire;
-her yerde aynı kalınlıkta çizgi, tırnaksız). kamug'un logo üreticisiyle (gamma\\packaging\\make_logo.py) aynı tarz.
+her yerde aynı kalınlıkta çizgi, tırnaksız). kamug'un logo üreticisiyle (kamug\\packaging\\make_logo.py) aynı tarz.
 
 Üretir (Pillow gerekir):
   yazit/assets/logo.png — beyaz harf, saydam (arayüzde tema rengine boyanır); eski logoyla aynı 262×306 tuval
