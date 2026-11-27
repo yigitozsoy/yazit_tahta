@@ -981,7 +981,7 @@ class ResearchView(QWidget):
         hrow.addWidget(self.shelf_head, 1)
         for txt, tip, fn in (("+", t("rs_add_files"), self._add_files),
                              ("↗", t("rs_open_in_explorer"), lambda: self.research and os.startfile(self.research.folder)),
-                             ("×", t("rs_close"), self.close_research)):
+                             ("×", t("rs_close"), lambda: self.close_research())):   # clicked(False) show_home'a gitmesin
             b = QPushButton(txt)
             b.setObjectName("RsIcon")
             b.setToolTip(tip)
