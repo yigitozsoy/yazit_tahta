@@ -561,6 +561,7 @@ class PdfView(QScrollArea):
     page_changed = pyqtSignal(int, int)
     copied = pyqtSignal(str, int)            # metin, sayfa (1'den)
     quote_req = pyqtSignal(str, int)         # sağ tık › alıntı olarak ekle
+    image_req = pyqtSignal(QImage, int)      # seçilen alan (görsel / grafik) → araştırma sayfası; sayfa (1'den)
     undo_req = pyqtSignal()
     highlights_changed = pyqtSignal()
 
@@ -582,6 +583,13 @@ class PdfView(QScrollArea):
         self._anchor = None
         self._dragging = False
         self._moved = False
+        self._drag_vp = None       # seçerken farenin görünür alandaki yeri
+        # alan seçimi (görsel / grafik): Alt+sürükle, resmin üstünden sürükle ya da sağ tık › Alan seç
+        self.region = None         # (sayfa, QRectF bileşen koordinatı)
+        self._rstart = None        # sürükleme başı (sayfa, QPointF)
+        self._area_mode = False    # bir sonraki sürükleme alan seçer
+        self._figs = {}            # sayfa → [(sol, alt, sağ, üst)] PDF noktası: sayfadaki gömülü resimler
+        self._scroll_t = QTimer(self, interval=30, timeout=self._autoscroll_tick)
         self.matches = []          # [(sayfa, ilk, sayı)]
         self.mi = -1
         self.highlights = []
@@ -649,6 +657,7 @@ class PdfView(QScrollArea):
             self.rects.append(QRectF((W - w * s) / 2, y, w * s, h * s))
             y += h * s + PDF_GAP
         self.pages.resize(int(W), int(y + PDF_GAP))
+        self.region = None                 # bileşen koordinatında: ölçek değişince geçersiz
         self.pages.update()
         self._place_find()
 
@@ -782,12 +791,108 @@ class PdfView(QScrollArea):
         self.sel = (page, a, page, a + n - 1) if n > 0 else None
         self.pages.update()
 
+    # ---- alan seçimi (görsel / grafik)
+    def figure_rects(self, i):
+        """Sayfadaki gömülü resimlerin dikdörtgenleri (bileşen koordinatı). Çok küçükler (simge, çizgi) yok."""
+        if i not in self._figs:
+            out = []
+            try:
+                import pypdfium2.raw as pr
+                page = self.doc[i]
+                for ob in page.get_objects(filter=[pr.FPDF_PAGEOBJ_IMAGE], max_depth=4):
+                    lft, bot, rgt, top = ob.get_bounds()
+                    if rgt - lft >= 40 and top - bot >= 30:
+                        out.append((lft, bot, rgt, top))
+                page.close()
+            except Exception:
+                pass
+            self._figs[i] = out
+        r = self.rects[i]
+        s = self.scale()
+        H = self.sizes[i][1]
+        return [QRectF(r.left() + a * s, r.top() + (H - d) * s, (c - a) * s, (d - b) * s).intersected(r)
+                for a, b, c, d in self._figs[i]]
+
+    def figure_at(self, pos):
+        i = self.page_at(pos)
+        if i is None:
+            return None
+        hits = [fr for fr in self.figure_rects(i) if fr.contains(pos)]
+        return (i, min(hits, key=lambda fr: fr.width() * fr.height())) if hits else None
+
+    def set_area_mode(self, on=True):
+        self._area_mode = on
+        self.pages.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def clear_region(self):
+        if self.region is not None:
+            self.region = None
+            self.pages.update()
+
+    def region_image(self, max_w=2400):
+        """Seçili alanın yüksek çözünürlüklü görüntüsü (sayfa ekrandakinden bağımsız, ~200 dpi)."""
+        if self.region is None:
+            return None
+        i, rr = self.region
+        r = self.rects[i]
+        s = self.scale()
+        w_pt = rr.width() / s
+        k = max(1.0, min(200 / 72, max_w / max(1.0, w_pt)))      # nokta başına piksel
+        pw, ph = self.sizes[i]
+        crop = ((rr.left() - r.left()) / s, ph - (rr.bottom() - r.top()) / s,
+                pw - (rr.right() - r.left()) / s, (rr.top() - r.top()) / s)    # sol, alt, sağ, üst kesilecek pay
+        crop = tuple(max(0.0, c) for c in crop)
+        try:
+            page = self.doc[i]
+            bmp = page.render(scale=k, crop=crop, may_draw_forms=True, rev_byteorder=True)
+            fmt = QImage.Format.Format_RGB888 if bmp.n_channels == 3 else QImage.Format.Format_RGBA8888
+            img = QImage(bytes(bmp.buffer), bmp.width, bmp.height, bmp.stride, fmt).copy()
+            page.close()
+        except Exception:
+            return None
+        return img.convertToFormat(QImage.Format.Format_RGB32)
+
+    def region_menu(self, gpos):
+        """Alan seçilince: araştırma sayfasına ekle / kopyala."""
+        from PyQt6.QtWidgets import QMenu
+        if self.region is None:
+            return
+        m = QMenu(self)
+        m.addAction(t("rs_fig_add"), self.add_region)
+        m.addAction(t("rs_fig_copy") + "\tCtrl+C", self.copy_region)
+        m.addSeparator()
+        m.addAction(t("rs_fig_cancel"), self.clear_region)
+        m.exec(gpos)
+
+    def add_region(self):
+        img = self.region_image()
+        if img is not None and not img.isNull():
+            self.image_req.emit(img, self.region[0] + 1)
+        self.clear_region()
+
+    def copy_region(self):
+        img = self.region_image()
+        if img is None or img.isNull():
+            return False
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setImage(img)
+        return True
+
     def press(self, e):
         self.setFocus()
         if e.button() != Qt.MouseButton.LeftButton:
             return
         pos = e.position()
         i = self.page_at(pos)
+        self.clear_region()
+        if i is not None and (self._area_mode or e.modifiers() & Qt.KeyboardModifier.AltModifier
+                              or (self.figure_at(pos) is not None and self.char_at(i, pos, (2,)) < 0)):
+            if self.sel:
+                self.sel = None
+            p = QPointF(min(max(pos.x(), self.rects[i].left()), self.rects[i].right()), pos.y())
+            self._rstart = (i, p)
+            self._dragging = False
+            return
         if i is None:
             self.sel = None
             self.pages.update()
@@ -802,30 +907,78 @@ class PdfView(QScrollArea):
             self.sel = None
             self.pages.update()
 
+    def _drag_to(self, pos):
+        i = self.page_at(pos, clamp=True)
+        b = (i, self.char_near(i, pos))
+        a = self._anchor
+        if a != b:
+            self._moved = True
+        lo, hi = (a, b) if a <= b else (b, a)
+        sel = (lo[0], lo[1], hi[0], hi[1])
+        if sel != self.sel:
+            self.sel = sel
+            self.pages.update()
+
+    def _autoscroll_tick(self):
+        """Seçerken fare görünür alanın DIŞINDAYSA kaydır (uzaklaştıkça hızlanır); içerideyken hiç kaydırma."""
+        from PyQt6.QtWidgets import QApplication
+        if not self._dragging or not (QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            self._scroll_t.stop()
+            return
+        vp = self._drag_vp
+        h = self.viewport().height()
+        d = vp.y() if vp.y() < 0 else vp.y() - h if vp.y() > h else 0
+        if not d:
+            self._scroll_t.stop()
+            return
+        step = max(4, min(60, abs(d) // 2)) * (1 if d > 0 else -1)
+        sb = self.verticalScrollBar()
+        sb.setValue(sb.value() + step)
+        self._drag_to(QPointF(self.pages.mapFrom(self.viewport(), vp)))
+
     def move(self, e):
         pos = e.position()
-        if self._dragging and e.buttons() & Qt.MouseButton.LeftButton:
-            i = self.page_at(pos, clamp=True)
-            b = (i, self.char_near(i, pos))
-            a = self._anchor
-            if a != b:
-                self._moved = True
-            lo, hi = (a, b) if a <= b else (b, a)
-            self.sel = (lo[0], lo[1], hi[0], hi[1])
+        if self._rstart is not None and e.buttons() & Qt.MouseButton.LeftButton:
+            i, a = self._rstart
+            r = self.rects[i]
+            b = QPointF(min(max(pos.x(), r.left()), r.right()), min(max(pos.y(), r.top()), r.bottom()))
+            self.region = (i, QRectF(a, b).normalized())
             self.pages.update()
-            vp = self.viewport().mapFrom(self.pages, pos.toPoint())     # kenara gelince kaydır
-            if vp.y() < 20:
-                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - 18)
-            elif vp.y() > self.viewport().height() - 20:
-                self.verticalScrollBar().setValue(self.verticalScrollBar().value() + 18)
+            return
+        if self._dragging and e.buttons() & Qt.MouseButton.LeftButton:
+            self._drag_to(pos)
+            # pages → viewport: mapTo (viewport.mapFrom(pages) yanlış: mapFrom'un hedefi ata olmalı; eskiden
+            # yanlış çıkan y "alt kenardasın" sanıp her harekette sayfayı aşağı kaydırıyordu)
+            self._drag_vp = self.pages.mapTo(self.viewport(), pos.toPoint())
+            out = self._drag_vp.y() < 0 or self._drag_vp.y() > self.viewport().height()
+            if out and not self._scroll_t.isActive():
+                self._scroll_t.start()
+            elif not out:
+                self._scroll_t.stop()
             return
         i = self.page_at(pos)
+        if self._area_mode:
+            return
         over = i is not None and self.rects[i].contains(pos) and self.char_at(i, pos, (3,)) >= 0
-        self.pages.setCursor(Qt.CursorShape.IBeamCursor if over else Qt.CursorShape.ArrowCursor)
+        fig = not over and i is not None and self.figure_at(pos) is not None
+        self.pages.setCursor(Qt.CursorShape.IBeamCursor if over else Qt.CursorShape.CrossCursor if fig
+                             else Qt.CursorShape.ArrowCursor)
 
     def release(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._rstart is not None:
+            start = self._rstart
+            self._rstart = None
+            self.set_area_mode(False)
+            if self.region is None or self.region[1].width() < 8 or self.region[1].height() < 8:
+                fig = self.figure_at(start[1])       # tık (sürüklemeden): resmin tamamı
+                self.region = fig
+                self.pages.update()
+            if self.region is not None:
+                self.region_menu(e.globalPosition().toPoint())
+            return
         if e.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
+            self._scroll_t.stop()
             if not self._moved:
                 self.sel = None
                 self.pages.update()
@@ -915,8 +1068,18 @@ class PdfView(QScrollArea):
         h = self.highlight_at(pos)
         if h is not None:
             m.addAction(t("rs_hl_remove"), lambda: self.remove_highlight(h))
-        if not m.actions():
-            m.addAction(t("rs_find") + "\tCtrl+F", self.open_find)
+        if self.region is not None and self.region[1].contains(pos):
+            m.addSeparator()
+            m.addAction(t("rs_fig_add"), self.add_region)
+            m.addAction(t("rs_fig_copy") + "\tCtrl+C", self.copy_region)
+        else:
+            fig = self.figure_at(pos)
+            if fig is not None:
+                m.addSeparator()
+                m.addAction(t("rs_fig_add_img"), lambda: (setattr(self, "region", fig), self.add_region()))
+        m.addSeparator()
+        m.addAction(t("rs_fig_area") + "\tAlt+" + t("rs_drag"), self.set_area_mode)
+        m.addAction(t("rs_find") + "\tCtrl+F", self.open_find)
         m.exec(e.globalPos())
 
     # ---- arama
@@ -994,6 +1157,22 @@ class PdfView(QScrollArea):
 
     # ---- çizim (vurgu, arama, seçim)
     def paint_overlay(self, p, i, r):
+        if self.region is not None and self.region[0] == i:
+            rr = self.region[1]
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 70))            # alanın dışı hafif kararır
+            for part in (QRectF(r.left(), r.top(), r.width(), rr.top() - r.top()),
+                         QRectF(r.left(), rr.bottom(), r.width(), r.bottom() - rr.bottom()),
+                         QRectF(r.left(), rr.top(), rr.left() - r.left(), rr.height()),
+                         QRectF(rr.right(), rr.top(), r.right() - rr.right(), rr.height())):
+                if part.width() > 0 and part.height() > 0:
+                    p.drawRect(part)
+            from PyQt6.QtGui import QPen
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor("#2D7FF9"), 1.6, Qt.PenStyle.DashLine))
+            p.drawRect(rr)
+            p.restore()
         if not (self.highlights or self.matches or self.sel):
             return
         p.save()
@@ -1022,7 +1201,10 @@ class PdfView(QScrollArea):
     def keyPressEvent(self, e):
         from PyQt6.QtGui import QKeySequence
         if e.matches(QKeySequence.StandardKey.Copy):
-            self.copy()
+            if self.region is not None:
+                self.copy_region()
+            else:
+                self.copy()
             return
         if e.matches(QKeySequence.StandardKey.Find):
             self.open_find()
@@ -1036,6 +1218,9 @@ class PdfView(QScrollArea):
         if e.key() == Qt.Key.Key_Escape:
             if self.findbar is not None and self.findbar.isVisible():
                 self.close_find()
+            elif self.region is not None or self._area_mode:
+                self.clear_region()
+                self.set_area_mode(False)
             elif self.sel:
                 self.sel = None
                 self.pages.update()

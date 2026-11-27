@@ -196,6 +196,8 @@ def out_back(x):
 SECTION_KEYS = {"book": "rs_books", "article": "rs_articles", "video": "rs_videos", "image": "rs_images",
                 "link": "rs_links"}
 PAD = 16
+CACHE_M = 14     # durağan kaynağın çevresindeki pay (dönüş + gölge)
+ANIM_M = 30      # animasyondaki kaynağın payı (kalkma, büyüme, kitabın dışarı çıkması)
 
 
 class Slot:
@@ -234,6 +236,8 @@ class Shelf(QWidget):
         self._content_h = 200
         self._glow = {}            # rel → bitiş zamanı (ms): yapay zekâ istemcisinin okuduğu kaynak
         self._glow_timer = QTimer(self, interval=40, timeout=self._glow_tick)
+        self._cache = {}           # rel → (anahtar, QPixmap, köken): durağan kaynağın hazır çizimi
+        self._dirty = set()        # bir sonraki karede yeniden çizilecek (animasyondaki) kaynaklar
 
     # ---- veri
     def set_research(self, r):
@@ -243,8 +247,8 @@ class Shelf(QWidget):
 
     def set_current(self, rel):
         if rel != self.current:
-            self.current = rel
-            self.update()
+            old, self.current = self.current, rel
+            self._update_rels((old, rel))
 
     def sizeHint(self):
         return QSize(280, self._content_h)
@@ -276,9 +280,25 @@ class Shelf(QWidget):
             y += 26
             y = getattr(self, "_lay_" + typ)(items, y, W) + 22
         self._content_h = int(y)
+        live = {sl.src.rel for sl in self.slots}
+        for rel in [r for r in self._cache if r not in live]:
+            self._cache.pop(rel, None)
         self.setMinimumHeight(self._content_h)
         self.updateGeometry()
         self.update()
+
+    # ---- yalnızca değişen yeri çiz
+    def _slot_area(self, sl, m=CACHE_M):
+        r = sl.rect
+        if sl.src.type == "book":
+            return QRectF(r.x() - m, r.y() - m, r.width() + 2 * m + 22, r.height() + 2 * m)
+        return r.adjusted(-m, -m, m, m)
+
+    def _update_rels(self, rels):
+        rels = {r for r in rels if r}
+        for sl in self.slots:
+            if sl.src.rel in rels:
+                self.update(self._slot_area(sl, ANIM_M).toAlignedRect())
 
     def _lay_book(self, items, y, W):
         avail = W - 2 * PAD - 26
@@ -346,10 +366,12 @@ class Shelf(QWidget):
             if v == 0.0 and rel != self.hover:
                 self._h.pop(rel, None)
                 self._ph.pop(rel, None)
+        moving = set(self._h) | set(self._dirty)
+        self._dirty = set(self._h)       # sönen kaynak son karesinde de silinsin
         if not busy:
             self._anim.stop()
             self._last = 0
-        self.update()
+        self._update_rels(moving)
 
     def glow(self, rel, ms=4500):
         """Bir yapay zekâ istemcisi bu kaynağı okuyor: sırtı kısa süre hafifçe parlasın."""
@@ -358,15 +380,16 @@ class Shelf(QWidget):
         self._glow[rel] = self._clock.elapsed() + ms
         if not self._glow_timer.isActive():
             self._glow_timer.start()
-        self.update()
+        self._update_rels((rel,))
 
     def _glow_tick(self):
         now = self._clock.elapsed()
-        for rel in [r for r, end in self._glow.items() if end <= now]:
+        gone = [r for r, end in self._glow.items() if end <= now]
+        for rel in gone:
             self._glow.pop(rel, None)
         if not self._glow:
             self._glow_timer.stop()
-        self.update()
+        self._update_rels(set(self._glow) | set(gone))
 
     def _paint_glow(self, p, P):
         import math
@@ -514,25 +537,65 @@ class Shelf(QWidget):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if not self.slots:
             self._paint_empty(p, P)
+        clip = QRectF(e.rect())
         p.setFont(font(P["f_label"], 10, 600, P["label_sp"]))
         p.setPen(qc(P["muted"]))
         for y, txt in self.heads:
-            p.drawText(QRectF(PAD, y, self.width() - 2 * PAD, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, txt)
+            hr = QRectF(PAD, y, self.width() - 2 * PAD, 16)
+            if hr.intersects(clip):
+                p.drawText(hr, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, txt)
         for r in self.planks:
+            if not r.adjusted(0, 0, 0, 4).intersects(clip):
+                continue
             g = QLinearGradient(r.topLeft(), r.bottomLeft())
             g.setColorAt(0, qc(P["plank_hi"]))
             g.setColorAt(1, qc(P["plank"]))
             p.fillRect(r, g)
             p.fillRect(QRectF(r.x(), r.bottom(), r.width(), 3), qc(P["shadow"]))
+        # Görünmeyen kaynaklar çizilmez; durağan olanlar hazır resimden (yazı yerleşimi pahalı), yalnızca
+        # üstüne gelinen / animasyondaki kaynak canlı çizilir.
+        tkey = (rtheme(), theme.is_dark(), P["paper"], P["ink"], P["spine_text"], P["cassette"], self.devicePixelRatioF())
         order = sorted(self.slots, key=lambda sl: (sl.src.rel == self.hover, sl.z))
         for sl in order:
-            getattr(self, "_paint_" + sl.src.type)(p, P, sl)
+            rel = sl.src.rel
+            if not self._slot_area(sl, ANIM_M if rel in self._h else CACHE_M).intersects(clip):
+                continue
+            if rel == self.hover or self._h.get(rel):
+                getattr(self, "_paint_" + sl.src.type)(p, P, sl)
+            else:
+                pm, o = self._slot_pixmap(sl, P, tkey)
+                p.drawPixmap(o, pm)
         if self._glow:
             self._paint_glow(p, P)
         if self._drag_on:
             p.setPen(QPen(qc(P["ink"]), 1.5, Qt.PenStyle.DashLine))
             p.setBrush(qc(P["ink"], 22))
             p.drawRoundedRect(QRectF(self.rect()).adjusted(6, 6, -6, -6), 10, 10)
+
+    def _slot_pixmap(self, sl, P, tkey):
+        s = sl.src
+        r = sl.rect
+        key = (tkey, s.rel == self.current, s.type, s.title, s.author, s.year, s.get("excerpt"), s.get("duration"),
+               s.get("pages"), r.x(), r.y(), r.width(), r.height(), sl.extra.get("ang"))
+        hit = self._cache.get(s.rel)
+        if hit is not None and hit[0] == key:
+            return hit[1], hit[2]
+        area = self._slot_area(sl)
+        o = QPointF(math.floor(area.x()), math.floor(area.y()))     # tam piksel: yazı bulanıklaşmasın
+        w, h = math.ceil(area.right()) - int(o.x()), math.ceil(area.bottom()) - int(o.y())
+        dpr = self.devicePixelRatioF()
+        pm = QPixmap(max(1, round(w * dpr)), max(1, round(h * dpr)))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.GlobalColor.transparent)
+        q = QPainter(pm)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing)
+        q.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        q.translate(-o)
+        getattr(self, "_paint_" + s.type)(q, P, sl)
+        q.end()
+        self._cache[s.rel] = (key, pm, o)
+        return pm, o
 
     def _paint_empty(self, p, P):
         r = QRectF(PAD, PAD, self.width() - 2 * PAD, 200)

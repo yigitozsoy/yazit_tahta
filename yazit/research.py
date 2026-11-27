@@ -25,6 +25,7 @@ from .config import prefs, research_root
 META_FILE = "araştırma.yazit-research"
 OLD_META_FILE = "araştırma.delta-research"   # eski sürümlerin dosya adı: açılınca yeni ada çevrilir
 FORMAT = "delta-research"                    # iç biçim adı (dosyanın içinde), uyumluluk için değişmez
+IMG_DIR = "_yazit_gorseller"   # sayfaya eklenen görseller (PDF'ten seçilen alanlar); "_yazit" önekli → rafa girmez
 
 
 def _meta_path(folder, migrate=False):

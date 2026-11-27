@@ -2,7 +2,7 @@
 (solda kaynak rafı, ortada yazı, sağda el yazısı kenar notları; kelimeye bağlı notlarda halka + ok).
 
 Araştırma sayfasının gövdesi (QTextDocument) önce düz bir yapıya çevrilir (`body_items`):
-  ("h", düzey, parçalar) | ("p", parçalar) | ("q", alıntı metni, künye)
+  ("h", düzey, parçalar) | ("p", parçalar) | ("q", alıntı metni, künye) | ("img", göreli yol, genişlik, yükseklik)
   parça = (metin, {"b", "i", "u", "note": kimlik, "src": href})"""
 import html
 import os
@@ -11,7 +11,7 @@ from datetime import datetime
 from urllib.parse import unquote
 
 from PyQt6.QtGui import QTextDocument, QPdfWriter, QPageSize, QPageLayout, QTextTable
-from PyQt6.QtCore import QMarginsF
+from PyQt6.QtCore import QMarginsF, QUrl
 
 from .research import Research
 from . import shelf as SH
@@ -71,6 +71,13 @@ def body_items(doc: QTextDocument):
                 else:
                     walk(child)
             elif blk.isValid():
+                bi = blk.begin()
+                while not bi.atEnd():          # görseller (PDF'ten seçilen alan, yapıştırılan resim)
+                    fr = bi.fragment()
+                    if fr.isValid() and fr.charFormat().isImageFormat():
+                        im = fr.charFormat().toImageFormat()
+                        items.append(("img", im.name(), im.width(), im.height()))
+                    bi += 1
                 lv = blk.blockFormat().headingLevel()
                 parts = _inlines(blk)
                 if lv and blk.text().strip():
@@ -85,8 +92,23 @@ def body_items(doc: QTextDocument):
 
 def page_doc(research: Research):
     d = QTextDocument()
+    d.setBaseUrl(QUrl.fromLocalFile(research.folder.rstrip("\\/") + "/"))   # görseller klasöre göre göreli
     d.setHtml(research.page.get("html", "") or "")
     return d
+
+
+def img_path(research, name):
+    p = unquote(name)
+    return p if os.path.isabs(p) else os.path.join(research.folder, p)
+
+
+def img_data_uri(research, name):
+    import base64
+    try:
+        with open(img_path(research, name), "rb") as f:
+            return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return ""
 
 
 def notes_by_id(research):
@@ -141,6 +163,8 @@ def to_markdown(research: Research, meta=""):
             lines += [txt, ""]
         elif it[0] == "q":
             lines += ["> " + it[1], ">", f"> — {it[2][0]}", ""]
+        elif it[0] == "img":
+            lines += [f"![]({it[1].replace(' ', '%20')})", ""]
     if foot:
         for k, nid in enumerate(foot, 1):
             lines.append(f"[^{k}]: {notes[nid].get('text', '')}")
@@ -203,6 +227,9 @@ def save_pdf(research, path, meta=""):
                          f"<p style=\"font-family:{quote}; font-style:italic; font-size:11pt;\">“{html.escape(it[1])}”</p>"
                          f"<p style=\"font-family:{mono}; font-size:8pt; color:{P['ink']};\">"
                          f"— {html.escape(SH.cap(it[2][0], P))}</p></td></tr></table>")
+        elif it[0] == "img":
+            w = min(it[2] or 480, 640)          # A4 sütununa sığsın
+            parts.append(f'<p style="margin:8pt 0 2pt;"><img src="{html.escape(it[1])}" width="{w:.0f}"></p>')
     if notes:
         parts.append(f"<h2 style=\"font-family:{disp}; font-size:14pt; margin-top:18pt;\">Notlar</h2>")
         for n in notes:
@@ -217,6 +244,7 @@ def save_pdf(research, path, meta=""):
     f = SH.font(P["f_body"], 11)
     f.setPointSizeF(11)
     td.setDefaultFont(f)
+    td.setBaseUrl(QUrl.fromLocalFile(research.folder.rstrip("\\/") + "/"))
     td.setHtml("".join(parts))
     w = QPdfWriter(path)
     w.setTitle(research.title)
@@ -244,6 +272,7 @@ h1 { font: 600 clamp(40px, 6vw, 64px)/1.02 'Oswald', sans-serif; letter-spacing:
 h2 { font: 600 30px/1.15 'Oswald', sans-serif; margin: 44px 0 12px; color: #EDEBE4; }
 h3 { font: 500 23px/1.2 'Oswald', sans-serif; margin: 30px 0 10px; color: #EDEBE4; }
 p { margin: 0 0 16px; }
+figure { margin: 22px 0 6px; } figure img { display: block; height: auto; border-radius: 4px; background: #fff; }
 .toc { border-left: 1px solid var(--cizgi); padding: 4px 0 4px 16px; margin: 0 0 30px; }
 .toc .mono { font-size: 11px; color: var(--soluk); }
 .toc a { display: block; color: var(--kirik); text-decoration: none; padding: 3px 0; font-size: 15px; }
@@ -496,6 +525,10 @@ def to_site_html(research, meta=""):
             link = f'<a href="{html.escape(rel)}" style="color:inherit;text-decoration:none">' if rel else ""
             body.append(f'<blockquote><p>“{html.escape(it[1])}”</p><cite>{link}— {html.escape(SH.cap(cite, P))}'
                         f'{"</a>" if link else ""}</cite></blockquote>')
+        elif it[0] == "img":
+            uri = img_data_uri(research, it[1])      # tek dosya HTML: görsel içine gömülür
+            if uri:
+                body.append(f'<figure><img src="{uri}" alt="" style="max-width:100%;width:{it[2]:.0f}px"></figure>')
     side = [f'<h4>{k}NOTLAR · %d</h4>' % len(notes)]
     for n in notes:
         if n.get("id") in anchored:

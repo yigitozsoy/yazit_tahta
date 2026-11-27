@@ -10,7 +10,7 @@ from urllib.parse import quote as urlquote, unquote, parse_qs
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRectF, QSize, QPoint, QPointF
 from PyQt6.QtGui import (QPainter, QPainterPath, QPen, QFontMetricsF, QTextOption, QKeySequence, QShortcut, QTextCursor,
                          QTextTableFormat, QTextFrameFormat, QTextCharFormat, QTextBlockFormat, QTextLength, QBrush,
-                         QColor)
+                         QColor, QTextDocument)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QSplitter, QTabBar,
                              QStackedWidget, QLineEdit, QTextEdit, QPushButton, QFileDialog, QInputDialog, QMenu,
                              QFrame, QSizePolicy)
@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollA
 from . import kamuglink
 from .config import prefs, research_root
 from .i18n import t
-from .research import Research, recent, remember, forget, new_research, peek
+from .research import Research, recent, remember, forget, new_research, peek, IMG_DIR
 from .readers import open_reader, PdfView, TranscriptView, fmt_time
 from .shelf import Shelf, rp, qc, font, ff, head, cap
 
@@ -294,6 +294,43 @@ class NotesColumn(QWidget):
 
 
 # --------------------------------------------------------------------------- araştırma sayfası
+def save_page_image(folder, img, stem):
+    """Görseli <araştırma>/_yazit_gorseller/<stem>-<n>.png olarak kaydeder; göreli yolu (/ ile) döndürür."""
+    d = os.path.join(folder, IMG_DIR)
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    stem = re.sub(r"[^\w\-]+", "-", stem, flags=re.UNICODE).strip("-")[:40] or "gorsel"
+    n = 1
+    while os.path.exists(os.path.join(d, f"{stem}-{n}.png")):
+        n += 1
+    name = f"{stem}-{n}.png"
+    if not img.save(os.path.join(d, name), "PNG"):
+        return None
+    return IMG_DIR + "/" + name
+
+
+def image_width(img, maxw=760):
+    """Sayfada gösterilecek genişlik: ~200 dpi'lık görüntü ekranda doğal boyutuna yakın, sütuna sığar."""
+    return max(120, min(maxw, round(img.width() * 0.48)))
+
+
+def insert_image(edit, name, img, cursor=None):
+    """Görseli (göreli ad) metin alanına ekler; kaynağı belgeye önceden konur (diskten yeniden okunmasın)."""
+    from PyQt6.QtCore import QUrl
+    from PyQt6.QtGui import QTextImageFormat
+    doc = edit.document()
+    doc.addResource(QTextDocument.ResourceType.ImageResource.value, QUrl(name), img)
+    f = QTextImageFormat()
+    f.setName(name)
+    w = image_width(img)
+    f.setWidth(w)
+    f.setHeight(w * img.height() / max(1, img.width()))
+    c = cursor or edit.textCursor()
+    c.insertImage(f)
+
+
 class GrowEdit(QTextEdit):
     """Yüksekliği içeriğe göre büyüyen metin alanı (sayfanın kendisi kayar).
     Alıntı künyesine tıklamak link_clicked; Ctrl+1 / Ctrl+2 başlık, Ctrl+0 düz metin."""
@@ -304,6 +341,7 @@ class GrowEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.viewport().setMouseTracking(True)
+        self.base_dir = ""        # araştırma klasörü: görsellerin göreli yolu buna göre
         self._hover_note = ""
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -314,6 +352,34 @@ class GrowEdit(QTextEdit):
     def _fit(self, *_):
         h = int(self.document().size().height()) + 8
         self.setFixedHeight(max(220, h))
+
+    def loadResource(self, typ, name):
+        """Sayfadaki görseller araştırma klasörüne göre göreli saklanır (_yazit_gorseller/…png)."""
+        if typ == QTextDocument.ResourceType.ImageResource.value and self.base_dir:
+            p = name.toLocalFile() if name.isLocalFile() else unquote(name.toString())
+            if p and not os.path.isabs(p):
+                p = os.path.join(self.base_dir, p)
+            if p and os.path.isfile(p):
+                from PyQt6.QtGui import QImage
+                img = QImage(p)
+                if not img.isNull():
+                    return img
+        return super().loadResource(typ, name)
+
+    def canInsertFromMimeData(self, md):
+        return md.hasImage() or super().canInsertFromMimeData(md)
+
+    def insertFromMimeData(self, md):
+        """Pano / sürükle: görsel gelirse araştırmanın görsel klasörüne kaydedilip sayfaya girer."""
+        if md.hasImage() and self.base_dir:
+            from PyQt6.QtGui import QImage
+            img = md.imageData()
+            if isinstance(img, QImage) and not img.isNull():
+                name = save_page_image(self.base_dir, img, "pano")
+                if name:
+                    insert_image(self, name, img)
+                    return
+        super().insertFromMimeData(md)
 
     def mouseMoveEvent(self, e):
         a = self.anchorAt(e.position().toPoint())
@@ -455,6 +521,7 @@ class ResearchPage(QScrollArea):
 
     def set_research(self, r):
         self.research = r
+        self.body.base_dir = r.folder
         self.title.setText(r.title)
         self.body.blockSignals(True)
         self.body.setHtml(r.page.get("html", "")) if r.page.get("html") else self.body.clear()
@@ -577,6 +644,41 @@ class ResearchPage(QScrollArea):
         af.setForeground(QBrush(QColor(P["ink"])))
         cc.insertText("— " + cap(cite, P), af)
         c.movePosition(QTextCursor.MoveOperation.End)
+        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
+        c.endEditBlock()
+        self._quote_steps = doc.availableUndoSteps()
+        QTimer.singleShot(0, lambda: self.ensureVisible(0, self.widget().height(), 0, 0))
+        return True
+
+    def add_image(self, name, img, cite, href):
+        """PDF'ten seçilen görsel / grafik: görsel + altında tıklanır künye (alıntı gibi). Tek geri al adımı."""
+        P = rp()
+        doc = self.body.document()
+        c = QTextCursor(doc)
+        c.movePosition(QTextCursor.MoveOperation.End)
+        c.beginEditBlock()
+        bf = QTextBlockFormat()
+        bf.setTopMargin(10)
+        if doc.isEmpty():
+            c.setBlockFormat(bf)
+        else:
+            c.insertBlock(bf, QTextCharFormat())
+        insert_image(self.body, name, img, c)
+        cb = QTextBlockFormat()
+        cb.setTopMargin(4)
+        cb.setBottomMargin(10)
+        c.insertBlock(cb, QTextCharFormat())
+        af = QTextCharFormat()
+        af.setAnchor(True)
+        af.setAnchorHref(href)
+        af.setFontUnderline(False)
+        af.setFontFamilies(P["f_mono"])
+        af.setProperty(QTextCharFormat.Property.FontPixelSize, 11)
+        af.setFontWeight(600)
+        af.setFontLetterSpacingType(af.fontLetterSpacingType().AbsoluteSpacing)
+        af.setFontLetterSpacing(1.0)
+        af.setForeground(QBrush(QColor(P["ink"])))
+        c.insertText("— " + cap(cite, P), af)
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.endEditBlock()
         self._quote_steps = doc.availableUndoSteps()
@@ -1252,6 +1354,8 @@ class ResearchView(QWidget):
             w.copied.connect(lambda txt, pg, w=w, rel=src.rel: self.quote(rel, txt, pg, w, toast=True))
             w.quote_req.connect(lambda txt, pg, w=w, rel=src.rel: self.quote(rel, txt, pg, w))
             w.undo_req.connect(self.undo_quote)
+        if isinstance(w, PdfView):
+            w.image_req.connect(lambda img, pg, rel=src.rel: self.add_figure(rel, img, pg))
         i = self._add_tab(src.rel, w, self._tab_label(src))
         self.tabbar.setTabToolTip(i, src.title + (f" — {src.author}" if src.author else ""))
         self.tabbar.setCurrentIndex(i)
@@ -1279,6 +1383,20 @@ class ResearchView(QWidget):
         self.page.add_quote(text, src.cite(page or None), href)
         if toast:
             self.toast.emit(t("rs_quoted"))
+
+    def add_figure(self, rel, img, page):
+        """PDF'ten seçilen alan (görsel / grafik) araştırma sayfasına: _yazit_gorseller'e PNG, altında künye."""
+        src = self.research.source(rel) if self.research else None
+        if src is None or img is None or img.isNull():
+            return
+        stem = os.path.splitext(os.path.basename(rel))[0][:28] + (f"-s{page}" if page else "")
+        name = save_page_image(self.research.folder, img, stem)
+        if not name:
+            self.toast.emit(t("rs_cant_open"))
+            return
+        href = "delta-src:" + urlquote(rel) + (f"#p={page}" if page else "")
+        self.page.add_image(name, img, src.cite(page or None), href)
+        self.toast.emit(t("rs_fig_added"))
 
     def quote_t(self, rel, text, sec):
         """Video dökümünden alıntı: künye "Yazar · 12:34", tıklayınca kamug o saniyede açar."""

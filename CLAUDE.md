@@ -261,6 +261,16 @@ Alıntı / PNG: Resimler\yazit. Video: Videolar\yazit (`video_dir`).
   paleti `rp_variant(False)`) bunu okur. Değişince `theme.changed` → `ResearchView.restyle()`: QSS, raf yerleşimi,
   sekme adları, okuyucular (`restyle`: ProseView kaynağı `set_content` ile saklar, yeniden çizer) ve sayfa
   (`normalize` başlık / metin / alıntı / künye yazı tiplerini de temaya çevirir).
+- **PDF'ten görsel (3.6)**: `PdfView` alan seçimi: Alt+sürükle, gömülü resmin üstünden sürükle / tık (resmin tamamı;
+  `figure_rects` pypdfium FPDF_PAGEOBJ_IMAGE, küçükler elenir), sağ tık › Alan seç. Bırakınca menü (sayfaya ekle /
+  kopyala); Ctrl+C alanı kopyalar, Esc bırakır. `region_image` sayfayı ~200 dpi `crop` ile çizer → `image_req` →
+  `ResearchView.add_figure`: `<araştırma>\_yazit_gorseller\<pdf>-s<N>-<n>.png` (`research.IMG_DIR`; "_yazit" önekli
+  klasör rafa girmez), `ResearchPage.add_image` görsel + künye (#p=N), tek geri al adımı (alıntı gibi). HTML'de göreli
+  `src`; `GrowEdit.loadResource` base_dir'e göre okur. Panodan görsel yapıştırma da aynı klasöre ("pano-n.png").
+  Dışa aktarma: body_items ("img", ad, g, y); Markdown `![]()`, PDF setBaseUrl, site HTML data URI.
+  Seçim kaydırması: fare görünür alanın DIŞINDAYKEN zamanlayıcıyla (`_autoscroll_tick`); pages → viewport `mapTo`.
+- **Raf hızı (3.6)**: `Shelf` durağan kaynağı bir kez QPixmap'e çizer (`_slot_pixmap`, anahtar tema + kaynak bilgisi +
+  yer), paintEvent kırpma dışını atlar, animasyon yalnızca hareket eden kaynağın alanını günceller (`_update_rels`).
 - **Kaynak bul (3.x)**: sağ sütunun üstünde `findpanel.FindPanel` (ResearchView.finder; NotesColumn düzenine 0. sıra).
   Bağlantı / DOI yapıştırınca (ya da rafa web bağlantısı bırakınca: `Shelf.links_dropped`) sormadan getirir; sözcük +
   Enter → OpenAlex araması, kartta İndir / Ekle. Ağ `finder.py` (urllib, arka plan iş parçacığı → Qt sinyali, iş
