@@ -22,6 +22,21 @@ def is_note_file(path) -> bool:
     return isinstance(path, str) and path.lower().endswith(NOTE_EXTS)
 
 
+RESEARCH_EXTS = (".yazit-research", ".delta-research")   # araştırma bilgisi dosyası (eski sürümünkü dahil)
+
+
+def research_folder_of(path):
+    """Çift tıklanan araştırma dosyası (ya da araştırma klasörü) → araştırma klasörü; değilse None."""
+    if not isinstance(path, str) or not path:
+        return None
+    p = os.path.abspath(path)
+    if p.lower().endswith(RESEARCH_EXTS) and os.path.isfile(p):
+        return os.path.dirname(p)
+    if os.path.isdir(p) and any(os.path.isfile(os.path.join(p, "araştırma" + e)) for e in RESEARCH_EXTS):
+        return p
+    return None
+
+
 APP_DIR_NAME = "yazit"          # klasör / kayıt adları (ASCII); görünen ad "yazıt"
 OLD_DIR_NAME = "delta"          # eski sürümün klasör adı: bir kez taşınır
 _renamed = {}                   # bu açılışta taşınan klasörler: eski yol → yeni yol (eski yolla gelen dosyalar için)

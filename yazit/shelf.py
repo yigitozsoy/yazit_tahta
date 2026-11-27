@@ -232,6 +232,8 @@ class Shelf(QWidget):
         self._last = 0
         self._anim = QTimer(self, interval=16, timeout=self._tick)
         self._content_h = 200
+        self._glow = {}            # rel → bitiş zamanı (ms): yapay zekâ istemcisinin okuduğu kaynak
+        self._glow_timer = QTimer(self, interval=40, timeout=self._glow_tick)
 
     # ---- veri
     def set_research(self, r):
@@ -348,6 +350,39 @@ class Shelf(QWidget):
             self._anim.stop()
             self._last = 0
         self.update()
+
+    def glow(self, rel, ms=4500):
+        """Bir yapay zekâ istemcisi bu kaynağı okuyor: sırtı kısa süre hafifçe parlasın."""
+        if not rel or self.research is None or self.research.source(rel) is None:
+            return
+        self._glow[rel] = self._clock.elapsed() + ms
+        if not self._glow_timer.isActive():
+            self._glow_timer.start()
+        self.update()
+
+    def _glow_tick(self):
+        now = self._clock.elapsed()
+        for rel in [r for r, end in self._glow.items() if end <= now]:
+            self._glow.pop(rel, None)
+        if not self._glow:
+            self._glow_timer.stop()
+        self.update()
+
+    def _paint_glow(self, p, P):
+        import math
+        now = self._clock.elapsed()
+        for sl in self.slots:
+            end = self._glow.get(sl.src.rel)
+            if end is None:
+                continue
+            left = max(0.0, (end - now) / 1000.0)
+            fade = min(1.0, left / 0.8)
+            pulse = 0.55 + 0.45 * math.sin(now / 260.0)
+            r = QRectF(sl.rect)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for k, a in ((7, 26), (4, 54), (1.5, 120)):
+                p.setPen(QPen(qc(P["ink"], int(a * pulse * fade)), k))
+                p.drawRoundedRect(r.adjusted(-k / 2 - 1, -k / 2 - 1, k / 2 + 1, k / 2 + 1), 4, 4)
 
     def _kick(self):
         if not self._anim.isActive():
@@ -492,6 +527,8 @@ class Shelf(QWidget):
         order = sorted(self.slots, key=lambda sl: (sl.src.rel == self.hover, sl.z))
         for sl in order:
             getattr(self, "_paint_" + sl.src.type)(p, P, sl)
+        if self._glow:
+            self._paint_glow(p, P)
         if self._drag_on:
             p.setPen(QPen(qc(P["ink"]), 1.5, Qt.PenStyle.DashLine))
             p.setBrush(qc(P["ink"], 22))

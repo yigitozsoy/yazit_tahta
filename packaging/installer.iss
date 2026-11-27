@@ -72,6 +72,8 @@ turkish.NoteType=yazıt notu
 english.NoteType=yazıt note
 turkish.OldNoteType=yazıt notu
 english.OldNoteType=yazıt note
+turkish.ResearchType=yazıt araştırması
+english.ResearchType=yazıt research
 turkish.LaunchApp=yazıt'ı aç
 english.LaunchApp=Open yazıt
 
@@ -120,6 +122,12 @@ Root: HKA; Subkey: "Software\Classes\.delta"; ValueType: string; ValueName: ""; 
 Root: HKA; Subkey: "Software\Classes\delta.Note"; ValueType: string; ValueName: ""; ValueData: "{cm:OldNoteType}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\delta.Note\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\_internal\yazit\assets\logo.ico"
 Root: HKA; Subkey: "Software\Classes\delta.Note\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+; araştırma.yazit-research (ve eski sürümün .delta-research'ü): çift tıkla o araştırma yazıt'ın araştırma modunda açılır
+Root: HKA; Subkey: "Software\Classes\.yazit-research"; ValueType: string; ValueName: ""; ValueData: "yazit.Research"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.delta-research"; ValueType: string; ValueName: ""; ValueData: "yazit.Research"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\yazit.Research"; ValueType: string; ValueName: ""; ValueData: "{cm:ResearchType}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\yazit.Research\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\_internal\yazit\assets\logo.ico"
+Root: HKA; Subkey: "Software\Classes\yazit.Research\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
@@ -176,8 +184,19 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM ' + ImageName + ' /F', '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 
+// Claude Desktop / Code açıkken yazit-mcp.exe (yapay zekâ istemcisinin MCP sunucusu) çalışır ve _internal'ı tutar:
+// kapanmazsa dosyalar yazılamaz. Notu yoktur, doğrudan kapatılır; istemci gerekince yeniden başlatır.
+procedure KillMcp();
+var
+  Code: Integer;
+begin
+  if not ShouldQuitRunning() then Exit;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM yazit-mcp.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  KillMcp();
   QuitRunning(ExpandConstant('{app}\{#AppExe}'), '{#AppExe}');
   if IsOldDirToClean() then
     QuitRunning(AddBackslash(OldAppDir) + '{#OldExe}', '{#OldExe}');   // eski sürümden yükseltme: eski exe kapansın
@@ -215,5 +234,8 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
+    KillMcp();
     QuitRunning(ExpandConstant('{app}\{#AppExe}'), '{#AppExe}');
+  end;
 end;

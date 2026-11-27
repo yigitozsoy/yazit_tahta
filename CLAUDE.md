@@ -14,6 +14,7 @@ kuralları burada da geçerli: Türkçe, sade varsayılanlar, gri vurgu, mor yok
 - Çalıştır: `python main.py` · tepside sessiz başlat: `python main.py --tray` · alıntı başlat: `--snip`
   (kurulum masaüstüne / Başlat'a "yazıt alıntı" kısayolu koyar, simgesi `assets/snip.ico`, `packaging/make_logo.py` üretir)
 - Python 3.14 · PyQt6 · pypdfium2 (araştırma modunun PDF okuyucusu; pakette `collect_all`, selfcheck 4 = pdfium yok)
+- MCP testi: `python tests/mcp_test.py` (28 adım, offscreen, her zaman güvenli).
 - Test: `python tests/smoke_test.py` (175 adım, gerçek 2 sn'lik ffmpeg kaydı ve gerçek OCR dahil; gerçek arayüz; `--shots KLASÖR` ekran görüntüsü alır).
   Dikkat: kayıt adımları ekranın sol üst köşesini gdigrab ile gerçekten kaydeder ve global kısayol kaydeder; kullanıcı
   çalışırken çalıştırma — yalnızca ilgili bölümü offscreen bir sürücü betiğiyle (QT_QPA_PLATFORM=offscreen, geçici LOCALAPPDATA) dene
@@ -128,6 +129,9 @@ yazit/
                       içindekiler, bağlı notlar (anchorHref "delta-note:id") + NoteLinks üst katmanı (halka + ok)
   kamuglink.py        kamug bağlantısı: notlardaki "ln" alanı, kamug.exe'yi bulma, video --at=sn
   research_export.py  Markdown / PDF / yigitozsoy.net biçiminde tek dosya HTML (raf CSS'i, kenar notu JS'i)
+  mcpserver.py        yapay zekâ istemcileri için stdio MCP sunucusu (JSON-RPC, satır satır): okuma araçları diskten
+                      (Research(readonly=True), metin önbelleği, fold_map/locate), yazma araçları çalışan yazıt'a
+  mcpapp.py           yazıt tarafı: McpHost (iş → onay balonu AskBubble / uygula), Claude Desktop ayarı, Claude Code komutu
   theme.py icons.py widgets.py titlebar.py i18n.py config.py
   assets/             logo.png (beyaz Göktürk "y" — kalın D gibi; arayüzde renklendirilir), logo.ico, snip.ico
                       (`packaging/make_logo.py` üretir; kamug'un logo üreticisiyle aynı tarz)
@@ -245,6 +249,8 @@ Alıntı / PNG: Resimler\yazit. Video: Videolar\yazit (`video_dir`).
   aynı mı" diye bakar (`ResearchPage._quote_steps`). HTML'den yüklenen bağlantılar altı çizili / mavi gelir →
   `ResearchPage.normalize()`. PyQt6'da `QTextTableCell.begin()` yok: hücrenin blokları first/lastCursorPosition ile.
   Video tıklanınca: dökümü varsa döküm sekmesi (zamana tıkla → kamug), yoksa doğrudan kamug.
+  Çift tık: kurulum `.yazit-research` / `.delta-research` → ProgID `yazit.Research` → `yazit.exe "%1"`;
+  `config.research_folder_of` (dosya ya da araştırma klasörü) → "research:<klasör>" iletisi → `MainWindow.open_research`.
 - **Araştırma teması (1.4)**: prefs `research_theme` (Seçenekler › Görünüm): `yazit` (varsayılan; theme.py paleti +
   vurgu, Segoe UI / Inter, gri) | `kamuflaj` (yigitozsoy.net: eski DARK/LIGHT, Oswald / JetBrains Mono / Caveat / Lora,
   "// " önekli büyük harf başlıklar) | `soft` (pastel, yuvarlak köşeler; Poppins / Manrope / Patrick Hand / Lora).
@@ -264,6 +270,20 @@ Alıntı / PNG: Resimler\yazit. Video: Videolar\yazit (`video_dir`).
   `set_override` (title / author / year / doi / url, type article|book). "Tarayıcıda aç" → `DownloadWatch`
   İndirilenler'i 15 dk yoklar, yeni PDF'i klasöre KOPYALAR, kendi yazdığı .url'yi siler. E-posta / kişisel bilgi
   isteklere konmaz (Unpaywall bu yüzden yok); UA `yazit/<sürüm> (+repo)`. İnternet yoksa `finder.OFFLINE`.
+- **Yapay zekâ / MCP (3.5)**: `yazit-mcp.exe` (spec'te ikinci EXE, aynı Analysis, console=True; pencereli exe'nin
+  stdin/stdout'u yok) ya da `python main.py --mcp` → `app.is_mcp_launch` → `mcpserver.main` (stdout yalnızca protokol;
+  print'ler stderr'e). Prefs `mcp_enabled` (varsayılan kapalı; sunucu her çağrıda dosyadan okur) ve `mcp_write`
+  ask | allow | off. Okuma araçları diskten okur, hiçbir şey yazmaz (`Research(readonly=True)`: eski ad taşınmaz,
+  save / izleme yok); okumadan önce çalışan yazıt'a "flush" gider (açık araştırmanın yazılmamış sayfası / notları).
+  Yazma: "\x02mcp\n" + JSON + "\n" tek örnek sunucusuna (app.serve satır tamamlanana dek biriktirir), McpHost cevabı
+  sonra yazar (onay balonu 50 sn — istemciler ~60 sn bekler; istemci bağlantıyı kesince iş sıradan düşer, ölü sokete ekleme yapılmaz; app.serve baytları biriktirir). yazıt kapalıysa yazma aracı onu `--tray`
+  ile başlatır. add_quote metni kaynakta `locate` ile birebir arar (boşluk / satır sonu tiresi / tırnak / Türkçe İ-ı /
+  aksan farkı gözetmez), bulamazsa reddeder, sayfa yanlışsa künyeyi düzeltir; href PdfView ile aynı
+  (`#p=sayfa(1'den)&a=harf&n=uzunluk`, dökümde `#t=`). Okunan kaynağın sırtı rafta parlar (`Shelf.glow`, "reading").
+  Test adı `YAZIT_SERVER` ortam değişkeni (SERVER_NAME'i değiştirir) → `tests/mcp_test.py` (offscreen, gerçek alt
+  süreç; ekranı kaydetmez, kullanıcı çalışırken de çalışır). selfcheck 5 = yazit-mcp.exe yok. Kurulum / kaldırma önce `taskkill /IM yazit-mcp.exe` (Claude açıkken _internal kilitli kalmasın).
+  Claude Desktop ayarı: %APPDATA%\Claude ve Store kurulumu (Packages\Claude_*\LocalCache\Roaming\Claude);
+  `mcpServers.yazit`, diğerleri korunur, eskisi .bak.
 - **Yazı tipi yükleme**: Qt, yolu ASCII dışı harf içeren dosyayı (`yazıt\…` klasörü) `addApplicationFont` ile
   açamayabiliyor (sessizce Segoe UI'ye düşer) → hep `fonts.add_font_file` (olmazsa dosya içeriğinden yükler).
 - **Kayıt paneli (1.4)**: akış panel → (alan seçimi) → geri sayım → kayıt (`YazitApp.toggle_record`; kısayol

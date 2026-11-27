@@ -224,6 +224,20 @@ class MainWindow(QMainWindow):
             b.setVisible(not on)
         self._refresh_title()
 
+    def open_research(self, folder):
+        """Araştırma dosyası / klasörü (çift tık, komut satırı): araştırma modunda o klasörü açar."""
+        self.bring_front()
+        if not folder or not os.path.isdir(folder):
+            self.board.toast(t("open_failed"), 2600)
+            return
+        prefs.set("research_last", os.path.normpath(folder))
+        if self.in_research():
+            self.research.open(folder)
+        else:
+            if self.research.research is not None:
+                self.research.open(folder)
+            self.set_research_mode(True)
+
     def toggle_layers(self):
         """Katmanlar (yan panelde notların altında): kapalıysa paneli de açarak açar, açıksa kapatır."""
         if self.panel.isVisible() and self.panel.layers_open():

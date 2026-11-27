@@ -343,6 +343,31 @@ class PrefsDialog(ThemedDialog):
         c4.currentIndexChanged.connect(lambda: prefs.set("save_format", c4.currentData()))
         lay.addWidget(_row(t("save_format"), c4, t("save_format_sub")))
 
+        # --- Yapay zekâ (MCP)
+        section(t("mcp_section"))
+        sw = ToggleSwitch(prefs.get("mcp_enabled", False))
+        sw.toggled.connect(lambda v: prefs.set("mcp_enabled", v))
+        lay.addWidget(_row(t("mcp_enable"), sw, t("mcp_enable_sub")))
+        cw = _combo([(m, t("mcp_write_" + ("offopt" if m == "off" else m))) for m in ("ask", "allow", "off")],
+                    prefs.get("mcp_write", "ask"))
+        cw.currentIndexChanged.connect(lambda: prefs.set("mcp_write", cw.currentData()))
+        lay.addWidget(_row(t("mcp_write"), cw, t("mcp_write_sub")))
+        mx = QHBoxLayout()
+        m1 = QPushButton(t("mcp_add_desktop"))
+        m1.setObjectName("Pill")
+        m1.clicked.connect(self._mcp_desktop)
+        m2 = QPushButton(t("mcp_copy_code"))
+        m2.setObjectName("Pill")
+        m2.clicked.connect(self._mcp_code)
+        mx.addWidget(m1)
+        mx.addWidget(m2)
+        lay.addWidget(_row(t("mcp_connect"), mx, t("mcp_connect_sub")))
+        self.mcp_lbl = QLabel("")
+        self.mcp_lbl.setObjectName("Secondary")
+        self.mcp_lbl.setWordWrap(True)
+        self.mcp_lbl.hide()
+        lay.addWidget(self.mcp_lbl)
+
         # --- Ekran videosu
         section(t("recording"))
         rs = QPushButton(t("rec_settings_open"))
@@ -414,6 +439,19 @@ class PrefsDialog(ThemedDialog):
         ok.clicked.connect(self.accept)
         foot.addWidget(ok)
         outer.addLayout(foot)
+
+    def _mcp_desktop(self):
+        from .mcpapp import add_to_claude_desktop
+        ok, files, err = add_to_claude_desktop()
+        self.mcp_lbl.setText((t("mcp_added") + "\n" + "\n".join(files)) if ok else t("mcp_add_failed", e=err))
+        self.mcp_lbl.show()
+
+    def _mcp_code(self):
+        from .mcpapp import claude_code_command
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(claude_code_command())
+        self.mcp_lbl.setText(t("mcp_copied") + "\n" + claude_code_command())
+        self.mcp_lbl.show()
 
     def _check_now(self):
         if self.updater is None:

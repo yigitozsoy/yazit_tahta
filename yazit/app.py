@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from .config import prefs, asset
 
-SERVER_NAME = "yazit-single-instance-v1"
+SERVER_NAME = os.environ.get("YAZIT_SERVER") or "yazit-single-instance-v1"   # YAZIT_SERVER: yalnızca test
 
 
 def _send_to_running(cmd: str) -> bool:
@@ -87,6 +87,8 @@ class YazitApp(QObject):
         self.annotate.export.connect(self.win.receive_image)
         self.hotkeys.triggered.connect(self.on_hotkey)
 
+        from .mcpapp import McpHost
+        self.mcp = McpHost(self)                 # yapay zekâ istemcilerinden gelen ekleme işleri (mcpapp.py)
         from .console import install as install_console
         install_console(self)                    # Shift+" geliştirici modu, " konsol (console.py)
         self._make_tray()
@@ -373,6 +375,9 @@ class YazitApp(QObject):
         elif cmd.startswith("open:"):   # not dosyasına çift tık (kamug da böyle açar)
             from .config import remap_old_path
             self.win.open_file(remap_old_path(cmd[5:]))
+        elif cmd.startswith("research:"):   # araştırma dosyasına çift tık
+            from .config import remap_old_path
+            self.win.open_research(remap_old_path(cmd[9:]))
 
     def quit(self):
         if self.recorder.active():
@@ -416,8 +421,11 @@ def _selfcheck():
     for m in ("window", "canvas", "items", "pages", "capture", "annotate", "recorder", "pin", "hotkeys",
               "dialogs", "titlebar", "toolbar", "theme", "icons", "widgets", "winident", "ocr", "export", "updater",
               "recpanel", "loopback", "fonts", "fontpick", "pixels", "retouch", "brushes", "research", "shelf",
-              "readers", "research_view", "research_export", "kamuglink", "cli", "console"):
+              "readers", "research_view", "research_export", "kamuglink", "cli", "console", "mcpserver", "mcpapp"):
         importlib.import_module("yazit." + m)
+    if getattr(sys, "frozen", False) and not os.path.isfile(os.path.join(os.path.dirname(sys.executable),
+                                                                         "yazit-mcp.exe")):
+        return 5                           # yapay zekâ istemcileri için konsollu exe yok
     try:                                   # araştırma modu PDF okuyucusu (pdfium.dll pakette mi?)
         import pypdfium2 as pdfium
         doc = pdfium.PdfDocument.new()
@@ -443,8 +451,27 @@ def serve(server, d):
         if s is None:
             return
 
+        buf = []
+
         def read():
-            raw = bytes(s.readAll()).decode("utf-8", errors="ignore")
+            from .mcpserver import MCP_TAG
+            data = bytes(s.readAll())
+            if buf or data.startswith(MCP_TAG.encode()):   # yapay zekâ istemcisi (mcpserver): satır tamamlanınca
+                buf.append(data)                           # baytlar birikir: Türkçe harf parça sınırında bölünmesin
+                whole = b"".join(buf)
+                if not whole.endswith(b"\n"):
+                    return
+                buf.clear()
+                from .mcpapp import serve_reply
+                host = getattr(d, "mcp", None)
+                reply = serve_reply(s)
+                body = whole[len(MCP_TAG):].decode("utf-8", errors="replace").strip()
+                if host is None:
+                    reply({"ok": False, "msg": "no host"})
+                else:
+                    QTimer.singleShot(0, lambda: host.handle(body, reply))
+                return
+            raw = data.decode("utf-8", errors="ignore")
             from .cli import CLI_TAG, handle_request
             if raw.startswith(CLI_TAG):        # python -m yazit.cli: komutu çalıştır, cevabı geri yaz
                 s.write(handle_request(d, raw[len(CLI_TAG):]))
@@ -457,9 +484,19 @@ def serve(server, d):
     server.newConnection.connect(on_conn)
 
 
+def is_mcp_launch(argv=None, exe=None):
+    """yazit-mcp.exe (konsollu) ya da --mcp: yapay zekâ istemcisi için stdio MCP sunucusu."""
+    argv = sys.argv if argv is None else argv
+    exe = os.path.basename(exe or (sys.executable if getattr(sys, "frozen", False) else "")).lower()
+    return "--mcp" in argv or exe.startswith("yazit-mcp")
+
+
 def main():
     if "--selfcheck" in sys.argv:
         return _selfcheck()
+    if is_mcp_launch():
+        from .mcpserver import main as mcp_main
+        return mcp_main()
     _install_excepthook()
     from .winident import set_process_id
     set_process_id()
@@ -491,7 +528,7 @@ def main():
         return 0
     snip = "--snip" in sys.argv
     hidden = "--tray" in sys.argv or snip
-    from .config import migrate_user_dirs, remap_old_path, is_note_file
+    from .config import migrate_user_dirs, remap_old_path, is_note_file, research_folder_of
     migrate_user_dirs()     # eski sürümün klasörleri bir kez yeni ada taşınır
     note_file = next((remap_old_path(a) for a in sys.argv[1:] if is_note_file(a)), None)
     if note_file and not os.path.isfile(note_file):
@@ -499,7 +536,14 @@ def main():
     if note_file:
         note_file = os.path.abspath(note_file)
         hidden = False
-    if _send_to_running("open:" + note_file if note_file else "snip" if snip else "tray" if hidden else "show"):
+    # araştırma dosyasına (araştırma.yazit-research) çift tık → o araştırma açılır
+    rs_folder = None if note_file else next(
+        (f for f in (research_folder_of(a) for a in sys.argv[1:] if not a.startswith("--")) if f), None)
+    if rs_folder:
+        hidden = False
+    msg = ("open:" + note_file if note_file else "research:" + rs_folder if rs_folder
+           else "snip" if snip else "tray" if hidden else "show")
+    if _send_to_running(msg):
         return 0
     QLocalServer.removeServer(SERVER_NAME)
     server = QLocalServer()
@@ -513,4 +557,6 @@ def main():
         QTimer.singleShot(300, lambda: d.handle_message("snip"))
     if note_file:
         QTimer.singleShot(0, lambda: d.handle_message("open:" + note_file))
+    if rs_folder:
+        QTimer.singleShot(0, lambda: d.handle_message("research:" + rs_folder))
     return app.exec()

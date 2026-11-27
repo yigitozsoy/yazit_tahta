@@ -168,7 +168,8 @@ def probe_video(path):
         from .recorder import find_ffmpeg
         ff = find_ffmpeg()
         if ff:
-            r = subprocess.run([ff, "-hide_banner", "-i", path], capture_output=True, timeout=8,
+            r = subprocess.run([ff, "-hide_banner", "-nostdin", "-i", path], capture_output=True, timeout=8,
+                               stdin=subprocess.DEVNULL,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             m = re.search(r"Duration: (\d+):(\d+):(\d+)", r.stderr.decode("utf-8", "ignore"))
             if m:
@@ -284,10 +285,11 @@ class Research(QObject):
     sources_changed = pyqtSignal()
     changed = pyqtSignal()
 
-    def __init__(self, folder):
+    def __init__(self, folder, readonly=False):
         super().__init__()
         self.folder = os.path.abspath(folder)
-        self.meta_path = _meta_path(self.folder, migrate=True)
+        self.readonly = readonly        # MCP sunucusu: okur, hiçbir şey yazmaz / izlemez
+        self.meta_path = _meta_path(self.folder, migrate=not readonly)
         self.data = {"format": FORMAT, "version": 1, "title": os.path.basename(self.folder),
                      "created": datetime.now().isoformat(timespec="seconds"),
                      "sources": {}, "probe": {}, "page": {}, "notes": [], "highlights": {}}
@@ -313,6 +315,8 @@ class Research(QObject):
 
     def save(self):
         self._save_timer.stop()
+        if self.readonly:
+            return
         tmp = self.meta_path + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as f:
@@ -370,7 +374,7 @@ class Research(QObject):
                 p = os.path.join(root, n)
                 found.append((os.path.relpath(p, self.folder).replace("\\", "/"), p, kind))
         old = set(self.watcher.directories())
-        if old != set(dirs):
+        if old != set(dirs) and not self.readonly:
             if old:
                 self.watcher.removePaths(list(old))
             self.watcher.addPaths(dirs)

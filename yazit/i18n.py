@@ -643,6 +643,51 @@ S = {
     "cli_on": ("açık", "on"), "cli_off": ("kapalı", "off"), "cli_done": ("tamam", "done"),
     "cli_no_reply": ("yazıt cevap vermedi", "yazıt did not reply"),
     "cli_started": ("yazıt açılıyor…", "starting yazıt…"),
+    # yapay zekâ istemcileri (MCP)
+    "mcp_section": ("Yapay zekâ", "AI"),
+    "mcp_enable": ("Yapay zekâ istemcileri araştırmalarımı okuyabilsin",
+                   "Let AI clients read my research"),
+    "mcp_enable_sub": ("Claude Desktop, Claude Code gibi MCP istemcileri araştırmalardaki kaynakları okuyup "
+                       "arayabilir, vurgularını ve notlarını görebilir. yazıt kendisi hiçbir şeyi dışarı göndermez; "
+                       "metni isteyen, sizin kullandığınız istemcidir.",
+                       "MCP clients such as Claude Desktop or Claude Code can read and search the sources of your "
+                       "research, and see your highlights and notes. yazıt itself sends nothing anywhere; the client "
+                       "you use is what asks for the text."),
+    "mcp_write": ("Araştırmaya ekleme", "Adding to research"),
+    "mcp_write_sub": ("İstemci araştırma sayfasına alıntı, not ya da rafa kaynak eklemek isteyince",
+                      "When the client wants to add a quote, a note or a source"),
+    "mcp_write_ask": ("Her seferinde sor", "Ask every time"),
+    "mcp_write_allow": ("Sormadan ekle", "Add without asking"),
+    "mcp_write_offopt": ("İzin verme (yalnızca okusun)", "Don't allow (read only)"),
+    "mcp_connect": ("Bağla", "Connect"),
+    "mcp_connect_sub": ("Claude Desktop'un ayar dosyasına yazıt'ı ekler (sonra Claude'u yeniden başlatın) ya da "
+                        "Claude Code komutunu panoya kopyalar.",
+                        "Adds yazıt to Claude Desktop's config file (then restart Claude) or copies the Claude Code "
+                        "command to the clipboard."),
+    "mcp_add_desktop": ("Claude Desktop'a ekle", "Add to Claude Desktop"),
+    "mcp_copy_code": ("Claude Code komutu", "Claude Code command"),
+    "mcp_added": ("Eklendi. Claude Desktop'u kapatıp yeniden açın.", "Added. Quit and reopen Claude Desktop."),
+    "mcp_add_failed": ("Eklenemedi: {e}", "Couldn't add: {e}"),
+    "mcp_copied": ("Komut panoya kopyalandı; terminalde çalıştırın.", "Command copied; run it in a terminal."),
+    "mcp_ask_add_quote": ("{who} araştırma sayfasına alıntı eklemek istiyor", "{who} wants to add a quote"),
+    "mcp_ask_add_note": ("{who} araştırmaya not eklemek istiyor", "{who} wants to add a note"),
+    "mcp_ask_add_source": ("{who} rafa kaynak eklemek istiyor", "{who} wants to add a source"),
+    "mcp_ask_session": ("Bu oturumda bir daha sorma", "Don't ask again this session"),
+    "mcp_anchor": ("Bağlanacağı yer: “{w}”", "Attached to: “{w}”"),
+    "mcp_allow": ("Ekle", "Add"),
+    "mcp_deny": ("Reddet", "Decline"),
+    "mcp_denied": ("Kullanıcı reddetti.", "The user declined."),
+    "mcp_off": ("yazıt'ta yapay zekâ erişimi kapalı (Seçenekler › Yapay zekâ).",
+                "AI access is off in yazıt (Options › AI)."),
+    "mcp_write_off": ("yazıt'ta araştırmaya ekleme izni kapalı (Seçenekler › Yapay zekâ).",
+                      "Adding to research is not allowed in yazıt (Options › AI)."),
+    "mcp_no_research": ("Araştırma klasörü açılamadı.", "Couldn't open the research folder."),
+    "mcp_quoted": ("{who} alıntı ekledi · Ctrl+Z geri alır", "{who} added a quote · Ctrl+Z undoes"),
+    "mcp_noted": ("{who} not ekledi", "{who} added a note"),
+    "mcp_note_ok": ("Not eklendi.", "Note added."),
+    "mcp_note_noanchor": ("Not eklendi; “{w}” sayfada bulunamadığı için bir yere bağlanmadı.",
+                          "Note added; “{w}” is not on the page, so it isn't attached."),
+    "mcp_fetching": ("Kaynak indiriliyor; bitince rafa düşecek.", "Downloading the source; it will appear on the shelf."),
 }
 
 _MONTHS = (("Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"),

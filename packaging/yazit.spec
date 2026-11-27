@@ -58,4 +58,21 @@ exe = EXE(
     version=os.path.join(SPECPATH, "version_info.txt"),
     icon=[os.path.join(ROOT, "yazit", "assets", "logo.ico")],
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="yazit")
+# yapay zekâ istemcileri (Claude Desktop / Code) için stdio MCP sunucusu: aynı program, konsollu exe
+# (adı yazit-mcp ile başlayınca app.main MCP sunucusunu çalıştırır; pencereli exe'nin stdin/stdout'u yok)
+exe_mcp = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="yazit-mcp",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+    version=os.path.join(SPECPATH, "version_info.txt"),
+    icon=[os.path.join(ROOT, "yazit", "assets", "logo.ico")],
+)
+coll = COLLECT(exe, exe_mcp, a.binaries, a.datas, strip=False, upx=False, name="yazit")
